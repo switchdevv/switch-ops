@@ -1,0 +1,30 @@
+{
+  "hosting": {
+    "// site": "switch-proj holds several Hosting sites. Naming ours pins the deploy to switch-ops.web.app — without it a plain `firebase deploy --only hosting` would publish this app over the project's default site. The site has to exist first: `firebase hosting:sites:create switch-ops`.",
+    "site": "switch-ops",
+
+    "public": "out",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+
+    "// cleanUrls": "next build with output:'export' emits /orders.html, not /orders/index.html — cleanUrls is what serves it at /orders. Without it every in-app URL 404s.",
+    "cleanUrls": true,
+    "trailingSlash": false,
+
+    "// headers": "Later entries win over earlier ones, so the catch-all comes first and the immutable rule for hashed assets overrides it. HTML must not be cached: without an explicit Cache-Control, Hosting defaults to an hour, and a deploy would take that long to reach anyone who had already loaded the app.",
+    "headers": [
+      {
+        "source": "**",
+        "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+      },
+      {
+        "source": "/_next/static/**",
+        "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+      }
+    ]
+  },
+  "emulators": {
+    "hosting": {
+      "port": 5065
+    }
+  }
+}

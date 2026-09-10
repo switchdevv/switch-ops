@@ -1,0 +1,37 @@
+{
+  "name": "switch-ops",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3020",
+    "build": "next build",
+    "preview": "next build && firebase emulators:start --only hosting",
+    "lint": "eslint",
+    "deploy": "next build && firebase deploy --only hosting"
+  },
+  "dependencies": {
+    "@heroui/react": "^3.2.4",
+    "@heroui/styles": "^3.2.4",
+    "@internationalized/date": "^3.12.4",
+    "@tanstack/react-query": "^5.102.8",
+    "client-only": "^0.0.1",
+    "maplibre-gl": "^5.24.0",
+    "next": "16.3.4",
+    "next-themes": "^0.4.6",
+    "parse": "^8.6.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@tanstack/eslint-plugin-query": "^5.102.8",
+    "@tanstack/react-query-devtools": "^5.102.8",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.4",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
