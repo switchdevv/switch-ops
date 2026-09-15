@@ -12,12 +12,14 @@ import {
   type DispatchSelection,
 } from '@/lib/ops/dispatch';
 import { ONGOING_WINDOW_HOURS } from '@/lib/services/dispatch';
-import type { AssignRequest } from '@/hooks/use-dispatch';
+import type { DispatchRequest } from '@/hooks/use-dispatch';
+import { useQueueRunnerStatus } from '@/components/queue-runner';
+import { QueueRunnerHealth } from './queue-runner-health';
 import { LiveControl } from '@/components/ui/live-control';
 import { SelectField, type SelectOption } from '@/components/ui/select-field';
-import { CloseIcon, SearchIcon } from '@/components/icons';
+import { AlertIcon, CloseIcon, SearchIcon } from '@/components/icons';
 import { DispatchActionBar, type DispatchFeedback } from './dispatch-action-bar';
-import { DispatchDetail } from './dispatch-detail';
+import { DispatchDetail, type QueueActions } from './dispatch-detail';
 import {
   DriverQueue,
   driverSectionId,
@@ -53,11 +55,12 @@ export type RegionState = {
   onChange: (region: string) => void;
 };
 
+/** The confirm-first actions — Assign and Queue — and what the last one did. */
 export type AssignState = {
-  pending: AssignRequest | null;
+  pending: DispatchRequest | null;
   isSending: boolean;
   feedback: DispatchFeedback | null;
-  onRequest: (request: AssignRequest) => void;
+  onRequest: (request: DispatchRequest) => void;
   onConfirm: () => void;
   onCancel: () => void;
   onDismiss: () => void;
@@ -78,6 +81,7 @@ export function DispatchPanel({
   live,
   region,
   assign,
+  queueActions,
 }: {
   model: DispatchModel;
   /** The first load — nothing to show yet, not even stale rows. */
@@ -93,8 +97,10 @@ export function DispatchPanel({
   live: LiveState;
   region: RegionState;
   assign: AssignState;
+  queueActions: QueueActions;
 }) {
   const { t, tCount, format } = useI18n();
+  const runner = useQueueRunnerStatus();
   const [tab, setTab] = useState<DispatchTab>('orders');
   const [query, setQuery] = useState('');
 
@@ -176,9 +182,17 @@ export function DispatchPanel({
           <SummaryTile
             label={t('dispatch.kpi.needsDriver')}
             value={format.number(model.counts.needsDriver)}
+            // Queued orders left this number when ops chose their driver; said beside it,
+            // so the red count dropping reads as work handled rather than work lost.
+            note={model.counts.queued > 0 ? tCount('dispatch.kpi.queued', model.counts.queued) : undefined}
             color="var(--danger)"
             isActive={model.counts.needsDriver > 0}
-            onClick={() => jumpTo('orders', phaseSectionId('needsDriver'))}
+            onClick={() =>
+              jumpTo(
+                'orders',
+                phaseSectionId(model.counts.needsDriver === 0 && model.counts.queued > 0 ? 'queued' : 'needsDriver'),
+              )
+            }
           />
           <SummaryTile
             label={t('dispatch.kpi.awaitingRestaurant')}
@@ -199,6 +213,18 @@ export function DispatchPanel({
         </div>
       </header>
 
+      {/* Above both halves, list and detail alike: queued orders silently not going out
+          is the one failure of this screen nobody would otherwise notice. */}
+      {runner.errorKey && (
+        <p
+          role="alert"
+          className="text-caption bg-warning-soft text-warning-soft-foreground border-separator/70 flex items-start gap-2 border-b px-3 py-2 font-bold"
+        >
+          <AlertIcon aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+          {t('dispatch.lineUp.runnerError', { reason: t(runner.errorKey) })}
+        </p>
+      )}
+
       {selection ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <DispatchDetail
@@ -207,8 +233,9 @@ export function DispatchPanel({
             now={now}
             handlers={handlers}
             onBack={onClearSelection}
-            onRequestAssign={assign.onRequest}
-            pendingAssign={assign.pending}
+            onRequest={assign.onRequest}
+            pending={assign.pending}
+            queueActions={queueActions}
           />
         </div>
       ) : (
@@ -310,6 +337,14 @@ export function DispatchPanel({
                 pin, or a driver who has not reported one, is in these lists but not on
                 the map — and a dispatcher counting pins would come up short. */}
             {unplaced > 0 && <span>{tCount('dispatch.map.unplaced', unplaced)}</span>}
+            {/* The queue's one real limit, said where the queue is visible: it runs in the
+                console, so with every console closed nothing goes out. */}
+            {model.counts.queued > 0 && (
+              <>
+                <span>{t('dispatch.lineUp.runnerNote')}</span>
+                <QueueRunnerHealth />
+              </>
+            )}
           </footer>
         </>
       )}

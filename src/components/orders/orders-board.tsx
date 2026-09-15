@@ -6,10 +6,12 @@ import { useAccess } from '@/hooks/use-access';
 import { useCities } from '@/hooks/use-cities';
 import { useNow } from '@/hooks/use-now';
 import { useNeedsDriverCount, useOrders, useStageTallies } from '@/hooks/use-orders';
+import { useDispatchQueue } from '@/hooks/use-queue';
 import { pinnedRegionId } from '@/lib/auth/access';
 import { useI18n } from '@/lib/i18n/provider';
 import { resolveRange } from '@/lib/ops/date-range';
 import type { OrderStage } from '@/lib/ops/order-status';
+import { queueSlots, reviewQueue } from '@/lib/ops/queue';
 import { ORDER_PAGE_SIZE } from '@/lib/services/orders';
 import {
   confineToRegion,
@@ -25,6 +27,8 @@ import { NeedsDriverBanner } from './needs-driver-banner';
 import { OrderList } from './order-list';
 import { OrdersToolbar } from './orders-toolbar';
 import { PipelineBar } from './pipeline-bar';
+
+const NONE: readonly string[] = [];
 
 /**
  * The orders board.
@@ -61,9 +65,18 @@ export function OrdersBoard() {
   const [isLive, setIsLive] = useState(true);
   const now = useNow();
 
-  const ordersQuery = useOrders(filters, page, isLive);
+  // The driver queue, for the orders on the board that ops have already lined up behind
+  // a driver: they wear a "Queued" tag instead of the red one, and leave the count.
+  const queueQuery = useDispatchQueue(filters.region, isLive);
+  const slots = useMemo(
+    () => queueSlots(reviewQueue(queueQuery.data ?? [], now)),
+    [queueQuery.data, now],
+  );
+  const queued = useMemo(() => [...slots.keys()].sort(), [slots]);
+
+  const ordersQuery = useOrders(filters, page, isLive, filters.needsDriver ? queued : NONE);
   const talliesQuery = useStageTallies(filters, isLive);
-  const needsDriverQuery = useNeedsDriverCount(filters, isLive);
+  const needsDriverQuery = useNeedsDriverCount(filters, isLive, queued);
   const citiesQuery = useCities();
 
   const navigate = useCallback(
@@ -102,7 +115,8 @@ export function OrdersBoard() {
     void ordersQuery.refetch();
     void talliesQuery.refetch();
     void needsDriverQuery.refetch();
-  }, [ordersQuery, talliesQuery, needsDriverQuery]);
+    void queueQuery.refetch();
+  }, [ordersQuery, talliesQuery, needsDriverQuery, queueQuery]);
 
   const total = ordersQuery.data?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / ORDER_PAGE_SIZE));
@@ -166,6 +180,7 @@ export function OrdersBoard() {
         isFetching={ordersQuery.isFetching}
         totalPages={totalPages}
         now={now}
+        queueSlots={slots}
         hasQuery={filters.query.length > 0}
         query={filters.query}
         canWidenDates={filters.range.preset !== 'all'}

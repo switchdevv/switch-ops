@@ -6,9 +6,26 @@ import type { MessageKey } from '@/lib/i18n/dictionary';
  * a rejected request generally, but at login it is specifically the `loginStaff` cloud
  * function not being deployed. Never map one code to one global message.
  *
- * `dispatch` is a write: assigning a driver from the live map.
+ * `dispatch` is a write: assigning a driver from the live map. `queue` is the driver
+ * queue — lining an order up behind a busy driver, and the runner that sends it later.
+ * `order` is a change to the order itself: confirming it, editing its status and prices, or
+ * taking its driver off it.
  */
-export type ErrorContext = 'login' | 'fetch' | 'dispatch';
+export type ErrorContext = 'login' | 'fetch' | 'dispatch' | 'queue' | 'order';
+
+/** Thrown by lib/services/queue.ts when an order is moved while a console is sending it. */
+export const QUEUE_SENDING = 'QUEUE_SENDING';
+
+/** Thrown before confirming, when a driver was chosen for an order that can't take one —
+ * a pickup, or a delivery someone is already carrying. */
+export const NO_DRIVER_FOR_ORDER = 'NO_DRIVER_FOR_ORDER';
+
+/** Thrown before unassigning, when the order no longer has the driver ops asked to take
+ * off — they cancelled, or someone else already moved it. */
+export const DRIVER_CHANGED = 'DRIVER_CHANGED';
+
+/** Thrown before unassigning an order that was delivered since the panel loaded. */
+export const ORDER_DELIVERED = 'ORDER_DELIVERED';
 
 /**
  * Maps whatever a Parse call threw to a dictionary key, not to a string.
@@ -34,6 +51,31 @@ export function parseErrorKey(error: unknown, context: ErrorContext): MessageKey
     if (message === 'ORDER_CANCELED') return 'errors.orderCanceled';
     // Sic — the backend's spelling.
     if (message === 'ORDER_FULLFILLED') return 'errors.orderTaken';
+  }
+
+  // `acceptManager` uses the same two words, meaning something narrower: canceled, or no
+  // longer at status 0 — accepted by the restaurant, most likely, since the panel loaded.
+  if (context === 'order') {
+    if (message === NO_DRIVER_FOR_ORDER) return 'errors.noDriverForOrder';
+    if (message === DRIVER_CHANGED) return 'errors.driverChanged';
+    if (message === ORDER_DELIVERED) return 'errors.orderDelivered';
+    if (message === 'ORDER_CANCELED') return 'errors.orderCanceled';
+    if (message === 'ORDER_FULLFILLED') return 'errors.alreadyConfirmed';
+  }
+
+  // `DispatchQueue` is this console's own class, so the server may not know it yet: with
+  // client class creation off it refuses a class it has never seen ("non-existent
+  // class"), and with `addField` locked, a column it hasn't got. Both are one-time setup
+  // in the Parse Dashboard, not a permission a person lacks — and both come back as 119,
+  // which would otherwise read as "you're not allowed".
+  if (context === 'queue') {
+    if (message === QUEUE_SENDING) return 'errors.queueSending';
+    if (message?.includes('non-existent class') || message?.includes('addField')) {
+      return 'errors.queueMissing';
+    }
+    const code = getErrorCode(error);
+    // 101 on a write is Parse's answer to a row whose ACL leaves this account out.
+    if (code === 101 || code === 119) return 'errors.queueForbidden';
   }
 
   switch (getErrorCode(error)) {
@@ -81,7 +123,7 @@ function getErrorCode(error: unknown): number | undefined {
   return undefined;
 }
 
-function getErrorMessage(error: unknown): string | undefined {
+export function getErrorMessage(error: unknown): string | undefined {
   if (
     error &&
     typeof error === 'object' &&

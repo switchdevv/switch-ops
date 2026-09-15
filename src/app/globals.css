@@ -40,6 +40,15 @@
   --shadow-accent: 0 6px 20px -8px var(--accent-shadow);
 }
 
+/* The one status colour HeroUI doesn't ship, registered the way its theme.css registers
+   the others, so `bg-queued-soft` and friends exist as utilities. */
+@theme inline {
+  --color-queued: var(--queued);
+  --color-queued-foreground: var(--queued-foreground);
+  --color-queued-soft: var(--queued-soft);
+  --color-queued-soft-foreground: var(--queued-soft-foreground);
+}
+
 /* ---------------------------------------------------------------------------
    Palette — switch-driver's, transcribed.
 
@@ -146,6 +155,14 @@
     --danger-soft-foreground: oklch(0.505 0.195 27);
     --danger-soft-hover: oklch(0.918 0.055 27);
 
+    /* An order lined up behind a busy driver. Violet (#7C3AED) because every nearer hue
+       is taken: blue says "with a driver", green "a free driver", and a queued order is
+       neither yet. The map draws it as hex — see MAP_PALETTE in lib/map/basemap.ts. */
+    --queued: oklch(0.541 0.247 293);
+    --queued-foreground: oklch(1 0 0);
+    --queued-soft: oklch(0.943 0.028 295);
+    --queued-soft-foreground: oklch(0.491 0.241 293);
+
     --field-background: oklch(1 0 0);
     --field-foreground: var(--foreground);
     --field-placeholder: oklch(0.665 0.013 262);
@@ -236,6 +253,12 @@
     --danger-soft: oklch(0.335 0.078 24);
     --danger-soft-foreground: oklch(0.81 0.135 24);
     --danger-soft-hover: oklch(0.38 0.1 24);
+
+    /* #A78BFA — lighter on dark, with a near-black label, like the accent above. */
+    --queued: oklch(0.709 0.159 294);
+    --queued-foreground: oklch(0.2 0.05 294);
+    --queued-soft: oklch(0.335 0.08 294);
+    --queued-soft-foreground: oklch(0.811 0.101 294);
 
     --field-background: oklch(0.252 0.005 240);
     --field-foreground: var(--foreground);

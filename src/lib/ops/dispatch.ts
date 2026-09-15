@@ -2,8 +2,10 @@ import type { MessageKey } from '@/lib/i18n/dictionary';
 import type { City } from '@/types/city';
 import type { DispatchOrderRow, OrderRestaurant } from '@/types/order';
 import type { ParseGeoPointJSON } from '@/types/parse';
+import type { QueueEntry } from '@/types/queue';
 import type { DriverParty } from '@/types/user';
 import { isUnassignedDelivery, stageOf, STALE_AFTER_MS } from './order-status';
+import { holdOf, queueSlots, reviewQueue, type LineHold, type QueueSlot } from './queue';
 import { algiersClock, restaurantHours, type RestaurantHours } from './restaurant-hours';
 
 /**
@@ -81,6 +83,12 @@ export function distanceMeters(a: LatLng, b: LatLng): number {
  *   is ops' own queue: nothing moves until someone here picks a driver.
  * - `awaitingRestaurant` — placed, not yet accepted. The call to make is to the
  *   restaurant; a delivery here moves to `needsDriver` the moment it is accepted.
+ * - `queued` — one that would need a driver, except ops have already chosen one: it is
+ *   lined up behind a driver who is on another job, and goes out the moment they deliver
+ *   (see lib/ops/queue.ts). Nothing for ops to do, so it is not red. An order sent from
+ *   the queue that the driver hasn't accepted yet stays here too, until they do. After
+ *   that the queue is done with it: should the driver cancel, it is `needsDriver` again,
+ *   for ops to decide — only ops put an order in a queue.
  * - `withDriver` — a driver has it, on the way to the restaurant or to the customer.
  * - `pickup` — the customer collects it; there is nothing to dispatch.
  *
@@ -88,28 +96,32 @@ export function distanceMeters(a: LatLng, b: LatLng): number {
  * `isUnassignedDelivery`). The map keeps those amber until the restaurant accepts, so its
  * red number is the orders a driver should be sent to *now* — sending one to a kitchen
  * that may still refuse the order is a wasted trip. Assigning early is still allowed, as
- * it is on switch-dashboard; see `isAssignable`.
+ * it is on switch-dashboard; see `isAssignable`. An unaccepted order can be queued too; it
+ * stays amber, because the call to the restaurant is still the one to make.
  */
-export const ORDER_PHASES = ['needsDriver', 'awaitingRestaurant', 'withDriver', 'pickup'] as const;
+export const ORDER_PHASES = ['needsDriver', 'awaitingRestaurant', 'queued', 'withDriver', 'pickup'] as const;
 
 export type OrderPhase = (typeof ORDER_PHASES)[number];
 
 const PHASE_RANK: Record<OrderPhase, number> = {
   needsDriver: 0,
   awaitingRestaurant: 1,
-  withDriver: 2,
-  pickup: 3,
+  queued: 2,
+  withDriver: 3,
+  pickup: 4,
 };
 
 /**
  * The colour each phase paints with. Red is reserved for the one state that is an alarm,
  * and green is not used by any order at all — on this screen green means "a driver who
  * is free", and an order sharing it would make the one question the map exists to answer
- * ambiguous.
+ * ambiguous. Queued gets a colour of its own, violet, rather than a lighter blue: it is
+ * *not* with a driver yet, and on a map read at a glance the two must not blur together.
  */
 export const PHASE_COLOR_VAR: Record<OrderPhase, string> = {
   needsDriver: 'var(--danger)',
   awaitingRestaurant: 'var(--warning)',
+  queued: 'var(--queued)',
   withDriver: 'var(--accent)',
   pickup: 'var(--faint)',
 };
@@ -119,6 +131,7 @@ export const PHASE_COLOR_VAR: Record<OrderPhase, string> = {
 export const PHASE_ON_COLOR_VAR: Record<OrderPhase, string> = {
   needsDriver: 'var(--danger-foreground)',
   awaitingRestaurant: 'var(--warning-foreground)',
+  queued: 'var(--queued-foreground)',
   withDriver: 'var(--accent-foreground)',
   pickup: 'var(--default-foreground)',
 };
@@ -126,6 +139,7 @@ export const PHASE_ON_COLOR_VAR: Record<OrderPhase, string> = {
 export const PHASE_LABEL_KEY: Record<OrderPhase, MessageKey> = {
   needsDriver: 'dispatch.phase.needsDriver',
   awaitingRestaurant: 'dispatch.phase.awaitingRestaurant',
+  queued: 'dispatch.phase.queued',
   withDriver: 'dispatch.phase.withDriver',
   pickup: 'dispatch.phase.pickup',
 };
@@ -133,11 +147,16 @@ export const PHASE_LABEL_KEY: Record<OrderPhase, MessageKey> = {
 export const PHASE_HINT_KEY: Record<OrderPhase, MessageKey> = {
   needsDriver: 'dispatch.phaseHint.needsDriver',
   awaitingRestaurant: 'dispatch.phaseHint.awaitingRestaurant',
+  queued: 'dispatch.phaseHint.queued',
   withDriver: 'dispatch.phaseHint.withDriver',
   pickup: 'dispatch.phaseHint.pickup',
 };
 
-/** An order's phase, or null when it is finished or canceled and so not the map's business. */
+/**
+ * An order's phase from its own row, or null when it is finished or canceled and so not
+ * the map's business. `queued` is never returned here — it depends on the queue, not the
+ * row, and is laid over this in `buildDispatchModel`.
+ */
 export function phaseOf(order: DispatchOrderRow): OrderPhase | null {
   const stage = stageOf(order);
   if (stage === 'new') return 'awaitingRestaurant';
@@ -169,8 +188,10 @@ export const DRIVER_SIGNAL_TIMEOUT_MS = 3 * 60 * 1000;
 /**
  * How long ago a driver must have been heard from to count as online at all.
  *
- * `driverActive` is a switch the driver app turns off on sign-out — and never gets to
- * turn off when the app is uninstalled, crashes for good, or the phone is replaced. Those
+ * `driverActive` is a switch only the driver app turns off — on Pause, on leaving the app,
+ * after a while in the background, and when it takes an order; not on sign-out
+ * (switch-driver src/screens/Home/Home.js, src/api/modules/auth.js). It never gets turned
+ * off when the app is uninstalled, crashes for good, or the phone is replaced. Those
  * rows keep the flag `true` forever, so the online-drivers query returns drivers last
  * seen *years* ago, and they arrived on this board as "signal lost" alongside someone who
  * dropped out five minutes ago. They are not the same thing and only one of them is worth
@@ -242,6 +263,8 @@ export type DispatchOrder = {
   dropoff: LatLng | null;
   restaurantId: string | null;
   driverId: string | null;
+  /** Its place in a driver's queue, if it has one. */
+  queue: QueueSlot | null;
 };
 
 export type DispatchRestaurant = {
@@ -259,6 +282,23 @@ export type DispatchRestaurant = {
   hours: RestaurantHours;
 };
 
+/** A driver's queue: what is lined up behind the order they are carrying. */
+export type DriverQueue = {
+  /** The rows waiting, next first. */
+  entries: QueueEntry[];
+  /** Their orders, in the same order. Some may be outside this map's window or region,
+   * so look them up rather than assume them. */
+  orderIds: string[];
+  /** Sent from the queue and not accepted yet — it holds the line. */
+  offeredOrderId: string | null;
+  /** That offer's row, for when it went out. */
+  offer: QueueEntry | null;
+  /** What keeps the next one from going out, or null when it is about to. */
+  hold: LineHold | null;
+};
+
+const EMPTY_QUEUE: DriverQueue = { entries: [], orderIds: [], offeredOrderId: null, offer: null, hold: null };
+
 export type DispatchDriver = {
   key: string;
   id: string;
@@ -272,6 +312,7 @@ export type DispatchDriver = {
   isStale: boolean;
   /** Open orders this driver is carrying. */
   orderIds: string[];
+  queue: DriverQueue;
 };
 
 export type DispatchCounts = Record<OrderPhase, number> &
@@ -300,56 +341,68 @@ function timeOf(iso: string | undefined): number | null {
 }
 
 /**
- * Builds the model from the two reads behind the map: the open orders (drivers
- * included on them) and the drivers who are online.
+ * Builds the model from the three reads behind the map: the open orders (drivers
+ * included on them), the drivers who are online, and the driver queue.
  *
- * A driver can arrive through either, or both. One carrying an order has usually
- * switched `driverActive` off — the driver app does that when it accepts — so the only
- * place their position comes from is the order they are carrying. Where a driver appears
- * twice, the row written most recently wins, since that is the one with the newer
+ * A driver can arrive through any of them. One carrying an order has usually switched
+ * `driverActive` off — the driver app does that when it accepts — so the only place their
+ * position comes from is the order they are carrying. Where a driver appears more than
+ * once, the row written most recently wins, since that is the one with the newer
  * position.
  */
 export function buildDispatchModel(
   orderRows: readonly DispatchOrderRow[],
   onlineDrivers: readonly DriverParty[],
+  queueEntries: readonly QueueEntry[],
   now: number,
 ): DispatchModel {
+  // The queue first: an order's place in a line decides its phase.
+  const review = reviewQueue(queueEntries, now);
+  const { lines } = review;
+  const slots = queueSlots(review);
+
   const orders: DispatchOrder[] = [];
 
   for (const row of orderRows) {
-    const phase = phaseOf(row);
-    if (!phase) continue;
+    const base = phaseOf(row);
+    if (!base) continue;
+    const queue = slots.get(row.objectId) ?? null;
     orders.push({
       key: entityKey('order', row.objectId),
       id: row.objectId,
       row,
-      phase,
+      // Ops have already chosen this one's driver: it is waiting on them, not on ops. An
+      // offer that ran out is the exception — nobody is taking it, so it is red again.
+      phase: base === 'needsDriver' && queue && queue.kind !== 'lapsed' ? 'queued' : base,
       placedAt: timeOf(row.createdAt) ?? now,
       pickup: toLatLng(row.restaurant?.location),
       dropoff: row.deliveryType === 'delivery' ? toLatLng(row.userAddress?.location) : null,
       restaurantId: row.restaurant?.objectId ?? null,
       driverId: row.driver?.objectId ?? null,
+      queue,
     });
   }
 
   orders.sort((a, b) => PHASE_RANK[a.phase] - PHASE_RANK[b.phase] || a.placedAt - b.placedAt);
 
-  // Drivers: the online list first, then whoever the orders name, newest row winning.
+  // Drivers: the online list first, then whoever the orders and the queue name, newest
+  // row winning.
   const driverRows = new Map<string, DriverParty>();
-  for (const row of onlineDrivers) driverRows.set(row.objectId, row);
-  for (const order of orders) {
-    const row = order.row.driver;
-    if (!row?.objectId) continue;
+  const addDriverRow = (row: DriverParty | undefined) => {
+    if (!row?.objectId) return;
     const known = driverRows.get(row.objectId);
     if (!known) {
       driverRows.set(row.objectId, row);
-      continue;
+      return;
     }
     const isNewer = (timeOf(row.updatedAt) ?? 0) > (timeOf(known.updatedAt) ?? 0);
-    // Spread the older one underneath so a field only one of the two reads selected
-    // (the online list is narrowed with `select`) survives either way.
+    // Spread the older one underneath so a field only one of the reads selected (the
+    // online list is narrowed with `select`) survives either way.
     driverRows.set(row.objectId, isNewer ? { ...known, ...row } : { ...row, ...known });
-  }
+  };
+  for (const row of onlineDrivers) addDriverRow(row);
+  for (const order of orders) addDriverRow(order.row.driver);
+  for (const line of lines.values()) addDriverRow(line.driver);
 
   const jobsByDriver = new Map<string, string[]>();
   for (const order of orders) {
@@ -363,15 +416,22 @@ export function buildDispatchModel(
   for (const row of driverRows.values()) {
     const seenAt = timeOf(row.updatedAt);
     const orderIds = jobsByDriver.get(row.objectId) ?? [];
+    const line = lines.get(row.objectId);
 
     // An account still flagged online whose app stopped reporting hours or years ago —
     // see `DRIVER_ONLINE_WINDOW_MS`. Not a driver who lost signal; a row nobody switched
-    // off. Carrying an order keeps anyone in regardless.
+    // off. Carrying an order keeps anyone in regardless, and so does having a queue:
+    // ops lined orders up behind this person, and need to see who is holding them.
     const isAbandoned = seenAt === null || now - seenAt > DRIVER_ONLINE_WINDOW_MS;
-    if (isAbandoned && orderIds.length === 0) continue;
+    if (isAbandoned && orderIds.length === 0 && !line) continue;
 
     const isStale = seenAt === null || now - seenAt > DRIVER_SIGNAL_TIMEOUT_MS;
-    const state: DriverState = orderIds.length > 0 ? 'busy' : isStale ? 'signalLost' : 'available';
+    // Carrying nothing with the switch off happens only to a driver brought in by their
+    // queue — paused, or in the moment between delivering and the app switching itself
+    // back on. They can't be reached through the app, which is what "signal lost" tells a
+    // dispatcher; "available" would offer someone `assignDriver` refuses.
+    const isUnreachable = isStale || row.driverActive !== true;
+    const state: DriverState = orderIds.length > 0 ? 'busy' : isUnreachable ? 'signalLost' : 'available';
     drivers.push({
       key: entityKey('driver', row.objectId),
       id: row.objectId,
@@ -381,6 +441,17 @@ export function buildDispatchModel(
       state,
       isStale,
       orderIds,
+      queue: line
+        ? {
+            entries: line.entries,
+            orderIds: line.entries.map((entry) => entry.order!.objectId),
+            offeredOrderId: line.offer?.order?.objectId ?? null,
+            offer: line.offer,
+            // Judged on the freshest row this model has for them, which may be newer
+            // than the one the queue read included.
+            hold: holdOf(line, { isBusy: orderIds.length > 0, isOnline: row.driverActive === true }, now),
+          }
+        : EMPTY_QUEUE,
     });
   }
 
@@ -419,6 +490,7 @@ export function buildDispatchModel(
   const counts: DispatchCounts = {
     needsDriver: 0,
     awaitingRestaurant: 0,
+    queued: 0,
     withDriver: 0,
     pickup: 0,
     available: 0,
@@ -461,15 +533,118 @@ export function isAssignable(order: DispatchOrder): boolean {
 }
 
 /**
+ * An order nobody has chosen a driver for yet: assignable, and not in anyone's queue.
+ * A queued order can still be assigned to a free driver, or moved to another queue, from
+ * its own detail; it just isn't offered as "waiting for a driver" any more.
+ */
+export function isQueueable(order: DispatchOrder): boolean {
+  return isAssignable(order) && order.queue === null;
+}
+
+/**
  * A driver an order can be put on: online by their own switch, and carrying nothing.
  *
  * `driverActive` is the platform's own test — `assignDriver` refuses anyone with it off
  * as `DRIVER_DISCONNECTED` — so offering those drivers would only offer an error. A
  * driver whose signal is lost still passes: the flag is on and a phone call may well
  * reach them; they are ranked last and marked instead.
+ *
+ * A driver with an order sent from their queue and not accepted yet doesn't pass either:
+ * a second offer on top would put two on a phone that can only take one.
  */
 export function canTakeOrders(driver: DispatchDriver): boolean {
-  return driver.row.driverActive === true && driver.orderIds.length === 0;
+  return (
+    driver.row.driverActive === true &&
+    driver.orderIds.length === 0 &&
+    driver.queue.offeredOrderId === null
+  );
+}
+
+/**
+ * Whether an order this driver was sent from their queue, and hasn't taken, can be sent to
+ * them again now: free, online, and not holding an offer for some *other* order. Their own
+ * open offer for this one doesn't stand in the way — resending it is the point, and the
+ * driver app shows an order it already has on screen only once (Home.js `showOrder`).
+ */
+export function canSendAgain(driver: DispatchDriver, orderId: string): boolean {
+  return (
+    driver.row.driverActive === true &&
+    driver.orderIds.length === 0 &&
+    (driver.queue.offeredOrderId === null || driver.queue.offeredOrderId === orderId)
+  );
+}
+
+/**
+ * A driver an order can be lined up behind: one who already has something — an order
+ * they are carrying, one sent and not yet accepted, or a queue. A driver with nothing is
+ * assigned to directly instead; queueing behind nobody is just a slower Assign.
+ *
+ * `driverActive` is not asked: a driver on a job has it off, which is the point.
+ */
+export function canQueueFor(driver: DispatchDriver): boolean {
+  return (
+    driver.orderIds.length > 0 ||
+    driver.queue.offeredOrderId !== null ||
+    driver.queue.orderIds.length > 0
+  );
+}
+
+/** How many orders come before one newly lined up behind this driver. */
+export function aheadOf(driver: DispatchDriver): number {
+  return (
+    driver.orderIds.length + (driver.queue.offeredOrderId ? 1 : 0) + driver.queue.orderIds.length
+  );
+}
+
+/** A driver's orders in the order they will do them: what they carry, what was sent to
+ * them, then their queue. */
+function workOf(driver: DispatchDriver): string[] {
+  return [
+    ...driver.orderIds,
+    ...(driver.queue.offeredOrderId ? [driver.queue.offeredOrderId] : []),
+    ...driver.queue.orderIds,
+  ];
+}
+
+/**
+ * The legs a driver's queue adds to their evening: from where each order before it ends
+ * to where the next one starts. The first leg leaves the drop-off of the order they are
+ * carrying, or where they are now if they carry nothing.
+ */
+export function queueLegs(
+  model: DispatchModel,
+  driver: DispatchDriver,
+): { orderId: string; from: LatLng; to: LatLng }[] {
+  const legs: { orderId: string; from: LatLng; to: LatLng }[] = [];
+  let at = driver.location;
+  for (const orderId of driver.orderIds) at = model.ordersById.get(orderId)?.dropoff ?? at;
+
+  const next = [
+    ...(driver.queue.offeredOrderId ? [driver.queue.offeredOrderId] : []),
+    ...driver.queue.orderIds,
+  ];
+  for (const orderId of next) {
+    const order = model.ordersById.get(orderId);
+    if (!order) continue;
+    if (at && order.pickup) legs.push({ orderId, from: at, to: order.pickup });
+    at = order.dropoff ?? order.pickup ?? at;
+  }
+  return legs;
+}
+
+/**
+ * Where a driver will be once everything they already have is done: the drop-off of the
+ * last order in their line. That, not where they are now, is how near they are to an
+ * order that would join the end of it.
+ */
+export function lastStopOf(model: DispatchModel, driver: DispatchDriver): LatLng | null {
+  const work = workOf(driver);
+  for (let index = work.length - 1; index >= 0; index -= 1) {
+    const order = model.ordersById.get(work[index]);
+    const stop = order?.dropoff ?? order?.pickup;
+    if (stop) return stop;
+  }
+  return driver.location;
 }
 
 export type Ranked<T> = { item: T; meters: number | null };
@@ -510,18 +685,42 @@ export function rankDrivers(
     );
 }
 
-/** Orders that need a driver, nearest restaurant to `from` first; oldest first on a tie. */
+/** Orders nobody has chosen a driver for, nearest restaurant to `from` first; oldest
+ * first on a tie. */
 export function rankOrders(
   from: LatLng | null,
   orders: readonly DispatchOrder[],
 ): Ranked<DispatchOrder>[] {
   return orders
-    .filter(isAssignable)
+    .filter(isQueueable)
     .map((item) => ({
       item,
       meters: from && item.pickup ? distanceMeters(from, item.pickup) : null,
     }))
     .sort((a, b) => compareMeters(a.meters, b.meters) || a.item.placedAt - b.item.placedAt);
+}
+
+/**
+ * Drivers an order at `target` could be lined up behind, by how far the end of their
+ * line is from it — see `lastStopOf`. Shorter lines first on a tie: the same distance
+ * reached one order sooner is the better choice.
+ */
+export function rankQueueCandidates(
+  target: LatLng | null,
+  model: DispatchModel,
+): Ranked<DispatchDriver>[] {
+  return model.drivers
+    .filter(canQueueFor)
+    .map((item) => {
+      const from = lastStopOf(model, item);
+      return { item, meters: target && from ? distanceMeters(from, target) : null };
+    })
+    .sort(
+      (a, b) =>
+        compareMeters(a.meters, b.meters) ||
+        aheadOf(a.item) - aheadOf(b.item) ||
+        compareNames(a.item.row.fullname, b.item.row.fullname),
+    );
 }
 
 /** Where a driver on this order is heading next: the restaurant until the food is
@@ -540,8 +739,10 @@ export const MAP_CANDIDATES = 3;
  * - `trip` — restaurant to customer: the order itself.
  * - `approach` — a driver to their next stop.
  * - `candidate` — a free driver to a restaurant they could be sent to.
+ * - `queued` — the way a driver's queue runs: from where one order ends to the
+ *   restaurant of the next.
  */
-export type RouteKind = 'trip' | 'approach' | 'candidate';
+export type RouteKind = 'trip' | 'approach' | 'candidate' | 'queued';
 
 export type RouteLeg = { kind: RouteKind; from: LatLng; to: LatLng; phase?: OrderPhase };
 
@@ -613,9 +814,23 @@ function addCandidates(model: DispatchModel, draft: FocusDraft, target: LatLng) 
     });
 }
 
+/** For a queued order: the driver it waits for, and the leg from the stop before it. */
+function addQueueDriver(model: DispatchModel, draft: FocusDraft, order: DispatchOrder) {
+  if (!order.queue) return;
+  const driver = model.driversById.get(order.queue.driverId);
+  if (!driver) return;
+  draft.keys.add(driver.key);
+  if (driver.location) draft.points.push(driver.location);
+  const leg = queueLegs(model, driver).find((entry) => entry.orderId === order.id);
+  if (!leg) return;
+  draft.points.push(leg.from);
+  draft.legs.push({ kind: 'queued', from: leg.from, to: leg.to });
+}
+
 function orderFocus(model: DispatchModel, order: DispatchOrder): Focus {
   const draft = emptyDraft();
   addOrder(model, draft, order);
+  addQueueDriver(model, draft, order);
   if (isAssignable(order) && order.pickup) addCandidates(model, draft, order.pickup);
   return draft;
 }
@@ -625,9 +840,12 @@ function driverFocus(model: DispatchModel, driver: DispatchDriver): Focus {
   draft.keys.add(driver.key);
   if (driver.location) draft.points.push(driver.location);
 
-  for (const orderId of driver.orderIds) {
+  for (const orderId of workOf(driver)) {
     const order = model.ordersById.get(orderId);
     if (order) addOrder(model, draft, order);
+  }
+  for (const leg of queueLegs(model, driver)) {
+    draft.legs.push({ kind: 'queued', from: leg.from, to: leg.to });
   }
 
   if (canTakeOrders(driver) && driver.location) {

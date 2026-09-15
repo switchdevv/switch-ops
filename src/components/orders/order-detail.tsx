@@ -17,6 +17,7 @@ import {
   StoreIcon,
   UserIcon,
 } from '@/components/icons';
+import { OrderActions } from './order-actions';
 import { OrderBasket, OrderPayment } from './order-contents';
 
 /**
@@ -45,17 +46,20 @@ export function OrderDetail({
 
   return (
     <div className="border-separator/70 bg-surface-secondary/40 flex flex-col gap-4 border-t p-4 sm:p-5">
-      {/* Only while the order is still moving: the live map holds open orders, and a link
-          that lands on "not on the map any more" teaches people not to trust the link. */}
-      {isOpen(order) && (
-        <Link
-          href={mapHrefForOrder(order.objectId)}
-          className="text-caption text-link hover:underline focus-visible:ring-focus inline-flex w-fit items-center gap-1.5 self-end rounded font-bold outline-none focus-visible:ring-2"
-        >
-          <MapPinIcon aria-hidden className="size-4" />
-          {t('orders.detail.showOnMap')}
-        </Link>
-      )}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <OrderActions order={order} className="min-w-0 flex-1" />
+        {/* Only while the order is still moving: the live map holds open orders, and a link
+            that lands on "not on the map any more" teaches people not to trust the link. */}
+        {isOpen(order) && (
+          <Link
+            href={mapHrefForOrder(order.objectId)}
+            className="text-caption text-link hover:underline focus-visible:ring-focus inline-flex w-fit items-center gap-1.5 rounded py-1.5 font-bold outline-none focus-visible:ring-2"
+          >
+            <MapPinIcon aria-hidden className="size-4" />
+            {t('orders.detail.showOnMap')}
+          </Link>
+        )}
+      </div>
 
       {options?.note && (
         // Above the panels, full width, in warning tint: this is a free-text

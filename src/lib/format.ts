@@ -114,6 +114,14 @@ export function makeFormatters(locale: Locale) {
       return `${number.format(hours)} h ${String(minutes % 60).padStart(2, '0')}`;
     },
 
+    /** A span in whole seconds ('8 s', '4 min 05'), for countdowns that tick each second
+     * — `elapsed` rounds to minutes, which would sit on '0 min' for the whole of one. */
+    span: (ms: number) => {
+      const seconds = Math.max(0, Math.ceil(ms / 1000));
+      if (seconds < 60) return `${number.format(seconds)} s`;
+      return `${number.format(Math.floor(seconds / 60))} min ${String(seconds % 60).padStart(2, '0')}`;
+    },
+
     /** 'Sun', 'dim.' — for a JavaScript weekday number (0 = Sunday), which is how
      * `Restaurant.workingDays` stores them. 1 January 2023 was a Sunday. */
     weekday: (day: number) => weekday.format(Date.UTC(2023, 0, 1 + day)),

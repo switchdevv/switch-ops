@@ -89,6 +89,15 @@ function stageParams(stage: OrderStage | ''): QueryParam[] {
  */
 const NO_DRIVER: QueryParam[] = [{ equalTo: { key: 'driver', value: null } }];
 
+/**
+ * Leaves out the orders lined up in a driver's queue (see lib/ops/queue.ts). They have no
+ * driver on the row yet, but ops have chosen one, so they no longer "need a driver" — the
+ * live map paints them violet rather than red, and the board's count agrees with it.
+ */
+function notQueued(queued: readonly string[]): QueryParam {
+  return queued.length > 0 ? { notContainedIn: { key: 'objectId', value: [...queued] } } : {};
+}
+
 /** What "still needs one" adds on top: not canceled, not already delivered. */
 const STILL_OPEN: QueryParam[] = [
   { equalTo: { key: 'canceled', value: false } },
@@ -105,10 +114,10 @@ const STILL_OPEN: QueryParam[] = [
  * contributes only "nobody is carrying it". That makes "canceled + needs a driver" a
  * coherent (if unusual) question rather than a contradiction resolved by array order.
  */
-function listParams(filters: OrderFilters): QueryParam[] {
+function listParams(filters: OrderFilters, queued: readonly string[]): QueryParam[] {
   const params = [...baseParams(filters)];
   if (filters.needsDriver) {
-    params.push(...NO_DRIVER);
+    params.push(...NO_DRIVER, notQueued(queued));
     if (!filters.stage) params.push(...STILL_OPEN);
   }
   params.push(...stageParams(filters.stage));
@@ -122,10 +131,16 @@ export type OrdersPage = PageResult<OrderRow>;
  *
  * Newest first, always: an operations queue is read from the top, and any other sort
  * would put the order someone is on the phone about below the fold.
+ *
+ * `queued` only matters under the needs-a-driver filter, which leaves those orders out.
  */
-export function listOrders(filters: OrderFilters, page: number): Promise<OrdersPage> {
+export function listOrders(
+  filters: OrderFilters,
+  page: number,
+  queued: readonly string[],
+): Promise<OrdersPage> {
   return findWithCount<OrderRow>(COLLECTION, [
-    ...listParams(filters),
+    ...listParams(filters, queued),
     ...INCLUDES,
     { descending: 'createdAt' },
     { limit: ORDER_PAGE_SIZE },
@@ -160,13 +175,16 @@ export async function tallyStages(filters: OrderFilters): Promise<StageTallies> 
  * has to pin `deliveryType` to 'delivery', and a second `equalTo` on a column Parse has
  * already constrained overwrites it — so the query would quietly answer a question
  * about deliveries while the user was looking at collections.
+ *
+ * Orders in a driver's queue are not counted: ops have already chosen their driver.
  */
-export function countNeedsDriver(filters: OrderFilters): Promise<number> {
+export function countNeedsDriver(filters: OrderFilters, queued: readonly string[]): Promise<number> {
   if (filters.type === 'pickup') return Promise.resolve(0);
   return count(COLLECTION, [
     ...baseParams(filters),
     { equalTo: { key: 'deliveryType', value: 'delivery' } },
     ...NO_DRIVER,
+    notQueued(queued),
     ...STILL_OPEN,
   ]);
 }

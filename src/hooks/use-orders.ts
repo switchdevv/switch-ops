@@ -29,10 +29,17 @@ export const LIVE_INTERVAL_MS = 20_000;
  * so a dispatcher mid-sentence on the phone doesn't lose the row they were reading.
  * The caller dims the list while `isPlaceholderData` is true instead.
  */
-export function useOrders(filters: OrderFilters, page: number, isLive: boolean) {
+export function useOrders(
+  filters: OrderFilters,
+  page: number,
+  isLive: boolean,
+  /** Orders in a driver's queue, sorted. Only the needs-a-driver filter reads them, so
+   * pass `[]` otherwise — a queue change shouldn't re-ask for every page of the board. */
+  queued: readonly string[],
+) {
   return useQuery({
-    queryKey: queryKeys.orders.list(filters, page),
-    queryFn: () => listOrders(filters, page),
+    queryKey: queryKeys.orders.list(filters, page, queued),
+    queryFn: () => listOrders(filters, page, queued),
     placeholderData: keepPreviousData,
     refetchInterval: isLive ? LIVE_INTERVAL_MS : false,
     // Off by default in React Query. Ops leaves this tab in a background window for
@@ -51,11 +58,11 @@ export function useStageTallies(filters: OrderFilters, isLive: boolean) {
   });
 }
 
-/** The number behind the "needs a driver" banner. */
-export function useNeedsDriverCount(filters: OrderFilters, isLive: boolean) {
+/** The number behind the "needs a driver" banner — queued orders left out. */
+export function useNeedsDriverCount(filters: OrderFilters, isLive: boolean, queued: readonly string[]) {
   return useQuery({
-    queryKey: queryKeys.orders.needsDriver(filters),
-    queryFn: () => countNeedsDriver(filters),
+    queryKey: queryKeys.orders.needsDriver(filters, queued),
+    queryFn: () => countNeedsDriver(filters, queued),
     placeholderData: keepPreviousData,
     refetchInterval: isLive ? LIVE_INTERVAL_MS : false,
   });

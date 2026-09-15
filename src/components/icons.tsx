@@ -403,6 +403,16 @@ export function ArrowRightIcon(props: IconProps) {
   );
 }
 
+/** A driver's queue: orders stacked up, the line moving forward. */
+export function QueueIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4.5 7h9M4.5 12h9M4.5 17h6" />
+      <path d="M18 18.5V6.5M15.5 9 18 6.5 20.5 9" />
+    </Icon>
+  );
+}
+
 export function ChevronUpIcon(props: IconProps) {
   return (
     <Icon {...props}>

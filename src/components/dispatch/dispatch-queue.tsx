@@ -20,8 +20,20 @@ import {
   type DriverState,
   type OrderPhase,
 } from '@/lib/ops/dispatch';
-import { ArrowRightIcon, BagIcon, ClockIcon, InboxIcon, PhoneIcon } from '@/components/icons';
+import { retryAtOf, sentAtOf } from '@/lib/ops/queue';
+import { PickupBadge } from '@/components/ui/pickup-badge';
+import { ArrowRightIcon, ClockIcon, InboxIcon, PhoneIcon, QueueIcon, RefreshIcon } from '@/components/icons';
 import { HoursText } from './restaurant-hours-text';
+
+/** How many of a driver's queued orders their row names before "+N". */
+const QUEUE_PREVIEW = 2;
+
+/** A driver's name for a label, from the model when they are on it, else from the row
+ * the queue read included. */
+export function driverNameOf(model: DispatchModel, driverId: string, fallback?: string): string | undefined {
+  const row = model.driversById.get(driverId)?.row;
+  return row?.fullname ?? row?.username ?? fallback;
+}
 
 /**
  * The queue: every open order grouped by what it needs, every driver grouped by whether
@@ -246,9 +258,14 @@ export function QueueOrderRow({
       </span>
 
       <span className="text-caption flex flex-wrap items-center gap-x-2 gap-y-1">
+        {/* First, and from the moment it is placed — not only once the restaurant accepts:
+            an amber pickup waiting on the kitchen must not read as a delivery about to need
+            a driver. */}
+        {row.deliveryType !== 'delivery' && <PickupBadge />}
         {order.phase === 'needsDriver' && (
           <Tag tone="danger">{t('dispatch.queue.noDriver')}</Tag>
         )}
+        {order.queue && <QueueSlotTag order={order} model={model} now={now} />}
         {/* The kitchen has bagged it while nobody is carrying it — the minutes in this
             window are the ones a customer feels. */}
         {row.isReady && order.phase !== 'withDriver' && <Tag tone="success">{t('orders.row.ready')}</Tag>}
@@ -256,12 +273,6 @@ export function QueueOrderRow({
           <Tag tone="warning">
             <ClockIcon aria-hidden className="size-3" />
             {t('dispatch.queue.waiting', { duration: format.elapsed(row.createdAt, now) })}
-          </Tag>
-        )}
-        {order.phase === 'pickup' && (
-          <Tag tone="default">
-            <BagIcon aria-hidden className="size-3" />
-            {t('orders.type.pickup')}
           </Tag>
         )}
         {driver && (
@@ -336,7 +347,66 @@ export function QueueDriverRow({
           <span className="truncate">{job.row.restaurant?.name ?? t('common.none')}</span>
         </span>
       )}
+
+      <DriverQueueLine driver={driver} />
     </QueueRow>
+  );
+}
+
+/**
+ * "Queued · Karim · no. 2", "Sent to Karim · 2 min ago" once it has gone and not been
+ * accepted, or "Not accepted · Karim" once that offer has run out — plus "Retrying" while
+ * the runner is waiting to try a refused send again.
+ */
+export function QueueSlotTag({ order, model, now }: { order: DispatchOrder; model: DispatchModel; now: number }) {
+  const { t, format } = useI18n();
+  const slot = order.queue;
+  if (!slot) return null;
+  const driver = driverNameOf(model, slot.driverId, slot.entry.driver?.fullname) ?? t('common.none');
+  const sentAt = sentAtOf(slot.entry, now);
+  const retryAt = slot.kind === 'waiting' ? retryAtOf(slot.entry) : null;
+
+  return (
+    <>
+      <Tag tone={slot.kind === 'lapsed' ? 'danger' : 'queued'}>
+        <QueueIcon aria-hidden className="size-3" />
+        {slot.kind === 'waiting'
+          ? t('dispatch.lineUp.queuedFor', { driver, position: slot.position })
+          : slot.kind === 'offered'
+            ? t('dispatch.lineUp.offeredAgo', {
+                driver,
+                ago: format.relative(sentAt === null ? null : new Date(sentAt).toISOString(), now),
+              })
+            : t('dispatch.lineUp.lapsedTo', { driver })}
+      </Tag>
+      {retryAt !== null && retryAt > now && (
+        <Tag tone="warning">
+          <RefreshIcon aria-hidden className="size-3" />
+          {t('dispatch.lineUp.retryingTag')}
+        </Tag>
+      )}
+    </>
+  );
+}
+
+/** The orders lined up behind a driver, by number — "Next: #A1B2C3, #D4E5F6 +2". */
+function DriverQueueLine({ driver }: { driver: DispatchDriver }) {
+  const { t } = useI18n();
+  const { orderIds, offeredOrderId } = driver.queue;
+  if (orderIds.length === 0 && !offeredOrderId) return null;
+
+  const upcoming = [...(offeredOrderId ? [offeredOrderId] : []), ...orderIds];
+  const named = upcoming.slice(0, QUEUE_PREVIEW).map((orderId) => `#${shortId(orderId)}`).join(', ');
+  const more = upcoming.length - QUEUE_PREVIEW;
+
+  return (
+    <span className="text-caption text-queued-soft-foreground flex min-w-0 items-center gap-1.5 font-bold">
+      <QueueIcon aria-hidden className="size-3.5 shrink-0" />
+      <span className="tabular truncate">
+        {t('dispatch.lineUp.next', { orders: named })}
+        {more > 0 ? ` ${t('dispatch.lineUp.more', { count: more })}` : ''}
+      </span>
+    </span>
   );
 }
 
@@ -469,6 +539,7 @@ const TONE_CLASS = {
   danger: 'bg-danger-soft text-danger-soft-foreground',
   warning: 'bg-warning-soft text-warning-soft-foreground',
   success: 'bg-success-soft text-success-soft-foreground',
+  queued: 'bg-queued-soft text-queued-soft-foreground',
   default: 'bg-surface-tertiary text-muted',
 } as const;
 

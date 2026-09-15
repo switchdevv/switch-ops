@@ -10,17 +10,19 @@ import {
   STAGE_COLOR_VAR,
   STALE_AFTER_MS,
 } from '@/lib/ops/order-status';
+import { retryAtOf, type QueueSlot } from '@/lib/ops/queue';
 import type { OrderRow as OrderRowData } from '@/types/order';
+import { PickupBadge } from '@/components/ui/pickup-badge';
 import { StageChip } from '@/components/ui/stage-chip';
 import { OrderDetail } from './order-detail';
 import {
-  BagIcon,
   BikeIcon,
   CardIcon,
   CashIcon,
   ChevronDownIcon,
   ClockIcon,
   PhoneIcon,
+  QueueIcon,
 } from '@/components/icons';
 
 /**
@@ -41,12 +43,15 @@ export function OrderRowItem({
   isExpanded,
   onToggle,
   now,
+  queueSlot,
 }: {
   order: OrderRowData;
   isExpanded: boolean;
   onToggle: () => void;
   /** A shared clock, so every row on the page agrees on what "now" is. */
   now: number;
+  /** Its place in a driver's queue, when ops have lined it up behind one. */
+  queueSlot?: QueueSlot;
 }) {
   const { t, tCount, format } = useI18n();
   const detailId = useId();
@@ -57,7 +62,6 @@ export function OrderRowItem({
 
   const stage = stageOf(order);
   const isPickup = order.deliveryType === 'pickup';
-  const TypeIcon = isPickup ? BagIcon : BikeIcon;
   const items = basketSize(readBasket(order));
   const needsDriver = isUnassignedDelivery(order);
   // The first of the customer's numbers — the rest, and the dialable links, are in the
@@ -98,10 +102,16 @@ export function OrderRowItem({
           {/* Which */}
           <span className="hidden w-[6rem] shrink-0 flex-col leading-tight sm:flex">
             <span className="text-body tabular font-bold">#{shortId(order.objectId)}</span>
-            <span className="text-caption text-faint flex items-center gap-1">
-              <TypeIcon className="size-3.5" />
-              {t(isPickup ? 'orders.type.pickup' : 'orders.type.delivery')}
-            </span>
+            {/* Delivery is the default and stays quiet; a pickup is the exception ops must
+                not treat like one, so it carries the loud mark. */}
+            {isPickup ? (
+              <PickupBadge className="mt-0.5" />
+            ) : (
+              <span className="text-caption text-faint flex items-center gap-1">
+                <BikeIcon className="size-3.5" />
+                {t('orders.type.delivery')}
+              </span>
+            )}
           </span>
 
           {/* Who — the flow of the order, restaurant to customer. Side by side once
@@ -120,6 +130,9 @@ export function OrderRowItem({
               </span>
             </span>
             <span className="text-caption mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              {/* On a phone the column above is hidden, and the mark with it. */}
+              {isPickup && <PickupBadge className="sm:hidden" />}
+
               {/* The number ops dials, on the row rather than one click into the detail:
                   the board is most often read with the customer already on the phone,
                   and matching a number by eye is what identifies their order.
@@ -134,7 +147,29 @@ export function OrderRowItem({
                 </span>
               )}
 
-              {needsDriver ? (
+              {/* A delivery with no driver on the row, but one chosen: lined up behind a
+                  driver on another job. Handled, so not red — the same violet the live
+                  map paints it. */}
+              {needsDriver && queueSlot?.kind === 'lapsed' ? (
+                // Sent from a queue and never taken: back to needing a driver, so red —
+                // but saying who it went to, which is the first thing ops will ask.
+                <span className="bg-danger-soft text-danger-soft-foreground inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-bold whitespace-nowrap">
+                  <QueueIcon aria-hidden className="size-3" />
+                  {t('orders.row.lapsed', { driver: queueSlot.entry.driver?.fullname ?? t('common.none') })}
+                </span>
+              ) : needsDriver && queueSlot ? (
+                <span className="bg-queued-soft text-queued-soft-foreground inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-bold whitespace-nowrap">
+                  <QueueIcon aria-hidden className="size-3" />
+                  {queueSlot.kind === 'offered'
+                    ? t('orders.row.offered', {
+                        driver: queueSlot.entry.driver?.fullname ?? t('common.none'),
+                        ago: format.relative(queueSlot.entry.dispatchedAt?.iso ?? queueSlot.entry.claimedAt?.iso, now),
+                      })
+                    : t((retryAtOf(queueSlot.entry) ?? 0) > now ? 'orders.row.retrying' : 'orders.row.queued', {
+                        driver: queueSlot.entry.driver?.fullname ?? t('common.none'),
+                      })}
+                </span>
+              ) : needsDriver ? (
                 <span className="bg-danger-soft text-danger-soft-foreground rounded px-1.5 py-0.5 font-bold whitespace-nowrap">
                   {t('orders.row.noDriver')}
                 </span>

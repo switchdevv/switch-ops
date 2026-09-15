@@ -6,9 +6,10 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { useAccess } from '@/hooks/use-access';
 import { useCities } from '@/hooks/use-cities';
-import { useAssignDriver, useOngoingOrders, useOnlineDrivers, type AssignRequest } from '@/hooks/use-dispatch';
+import { useAssignDriver, useOngoingOrders, useOnlineDrivers, type DispatchRequest } from '@/hooks/use-dispatch';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { useNow } from '@/hooks/use-now';
+import { useDispatchQueue, useMoveUp, useQueueOrder, useRemoveFromQueue, useRetryQueued } from '@/hooks/use-queue';
 import { pinnedRegionId } from '@/lib/auth/access';
 import { useI18n } from '@/lib/i18n/provider';
 import {
@@ -23,6 +24,7 @@ import { parseDispatchParams, serializeDispatchParams } from '@/lib/url/dispatch
 import type { SelectOption } from '@/components/ui/select-field';
 import { ChevronUpIcon } from '@/components/icons';
 import type { DispatchFeedback } from './dispatch-action-bar';
+import type { QueueActions } from './dispatch-detail';
 import { DispatchPanel } from './dispatch-panel';
 import type { QueueHandlers } from './dispatch-queue';
 
@@ -75,7 +77,7 @@ export function DispatchScreen() {
 
   const [isLive, setIsLive] = useState(true);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
-  const [pendingAssign, setPendingAssign] = useState<AssignRequest | null>(null);
+  const [pending, setPending] = useState<DispatchRequest | null>(null);
   const [feedback, setFeedback] = useState<DispatchFeedback | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
@@ -84,12 +86,23 @@ export function DispatchScreen() {
 
   const ordersQuery = useOngoingOrders(region, isLive);
   const driversQuery = useOnlineDrivers(region, isLive);
+  const queueQuery = useDispatchQueue(region, isLive);
   const citiesQuery = useCities();
   const assignMutation = useAssignDriver();
+  const queueMutation = useQueueOrder();
+  const { mutate: removeFromQueue, isPending: isRemoving } = useRemoveFromQueue();
+  const { mutate: moveUp, isPending: isMoving } = useMoveUp();
+  const { mutate: retryQueued, isPending: isRetrying } = useRetryQueued();
 
   const model = useMemo(
-    () => buildDispatchModel(ordersQuery.data?.results ?? [], driversQuery.data ?? [], now),
-    [ordersQuery.data, driversQuery.data, now],
+    () =>
+      buildDispatchModel(
+        ordersQuery.data?.results ?? [],
+        driversQuery.data ?? [],
+        queueQuery.data ?? [],
+        now,
+      ),
+    [ordersQuery.data, driversQuery.data, queueQuery.data, now],
   );
 
   const focus = useMemo(() => (selection ? focusOn(model, selection) : null), [model, selection]);
@@ -109,7 +122,7 @@ export function DispatchScreen() {
    * assigned. */
   const select = useCallback(
     (next: DispatchSelection | null) => {
-      setPendingAssign(null);
+      setPending(null);
       setFeedback(null);
       if (next) setIsSheetOpen(true);
       // The *effective* region, not whatever the URL asked for: a staff account that
@@ -130,23 +143,55 @@ export function DispatchScreen() {
     [selection, hoveredKey, select],
   );
 
-  const confirmAssign = useCallback(() => {
-    if (!pendingAssign) return;
-    const request = pendingAssign;
-    const driver = model.driversById.get(request.driverId);
+  const confirm = useCallback(() => {
+    if (!pending) return;
+    const request = pending;
+    const { kind, orderId, driverId } = request;
+    const driver = model.driversById.get(driverId);
     const driverName = driver?.row.fullname ?? driver?.row.username ?? '';
 
-    assignMutation.mutate(request, {
+    const outcome = {
       onSuccess: () => {
-        setPendingAssign(null);
-        setFeedback({ kind: 'success', driverName, orderId: request.orderId });
+        setPending(null);
+        setFeedback({ kind: 'success', action: kind, driverName, orderId });
       },
-      onError: (error) => {
-        setPendingAssign(null);
-        setFeedback({ kind: 'error', messageKey: parseErrorKey(error, 'dispatch') });
+      onError: (error: unknown) => {
+        setPending(null);
+        setFeedback({
+          kind: 'error',
+          action: kind,
+          messageKey: parseErrorKey(error, kind === 'assign' ? 'dispatch' : 'queue'),
+        });
       },
-    });
-  }, [assignMutation, model, pendingAssign]);
+    } as const;
+
+    if (kind === 'assign') {
+      assignMutation.mutate({ orderId, driverId }, outcome);
+    } else {
+      const cityId = model.ordersById.get(orderId)?.row.city?.objectId ?? null;
+      queueMutation.mutate({ orderId, driverId, cityId }, outcome);
+    }
+  }, [assignMutation, queueMutation, model, pending]);
+
+  const queueActions = useMemo<QueueActions>(() => {
+    const onError = (error: unknown) =>
+      setFeedback({ kind: 'error', action: 'change', messageKey: parseErrorKey(error, 'queue') });
+    return {
+      onRemove: (entry) => {
+        setFeedback(null);
+        removeFromQueue(entry.objectId, { onError });
+      },
+      onMoveUp: (entry, ahead) => {
+        setFeedback(null);
+        moveUp({ entry, ahead }, { onError });
+      },
+      onRetry: (entry) => {
+        setFeedback(null);
+        retryQueued(entry.objectId, { onError });
+      },
+      isChanging: isRemoving || isMoving || isRetrying,
+    };
+  }, [removeFromQueue, moveUp, retryQueued, isRemoving, isMoving, isRetrying]);
 
   // A success is worth reading, not worth keeping: the order itself turns blue on the
   // next refresh, which is the real confirmation. An error stays until dismissed.
@@ -160,15 +205,15 @@ export function DispatchScreen() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
-      if (pendingAssign) {
-        setPendingAssign(null);
+      if (pending) {
+        setPending(null);
         return;
       }
       if (selection) select(null);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [pendingAssign, selection, select]);
+  }, [pending, selection, select]);
 
   /**
    * The count of orders with nobody carrying them, in the tab title.
@@ -217,6 +262,7 @@ export function DispatchScreen() {
       onRetry={() => {
         void ordersQuery.refetch();
         void driversQuery.refetch();
+        void queueQuery.refetch();
       }}
       total={ordersQuery.data?.count ?? 0}
       now={now}
@@ -225,12 +271,13 @@ export function DispatchScreen() {
       onClearSelection={() => select(null)}
       live={{
         isLive,
-        isFetching: ordersQuery.isFetching || driversQuery.isFetching,
+        isFetching: ordersQuery.isFetching || driversQuery.isFetching || queueQuery.isFetching,
         updatedAt: ordersQuery.dataUpdatedAt,
         onToggle: () => setIsLive((live) => !live),
         onRefresh: () => {
           void ordersQuery.refetch();
           void driversQuery.refetch();
+          void queueQuery.refetch();
         },
       }}
       region={{
@@ -240,17 +287,18 @@ export function DispatchScreen() {
         onChange: (next) => navigate(next, null),
       }}
       assign={{
-        pending: pendingAssign,
-        isSending: assignMutation.isPending,
+        pending,
+        isSending: assignMutation.isPending || queueMutation.isPending,
         feedback,
         onRequest: (request) => {
           setFeedback(null);
-          setPendingAssign(request);
+          setPending(request);
         },
-        onConfirm: confirmAssign,
-        onCancel: () => setPendingAssign(null),
+        onConfirm: confirm,
+        onCancel: () => setPending(null),
         onDismiss: () => setFeedback(null),
       }}
+      queueActions={queueActions}
     />
   );
 

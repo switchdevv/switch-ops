@@ -55,13 +55,18 @@ export const queryKeys = {
     all: ['cities'] as const,
     list: () => ['cities', 'list'] as const,
   },
+  /**
+   * `queued` is the orders lined up behind a busy driver, which the needs-a-driver count
+   * and filter leave out — part of the key because it changes which rows come back.
+   * Callers pass it sorted, so the same set is the same key.
+   */
   orders: {
     all: ['orders'] as const,
-    list: (filters: OrderFilters, page: number) =>
-      ['orders', 'list', listKey(filters), page] as const,
+    list: (filters: OrderFilters, page: number, queued: readonly string[]) =>
+      ['orders', 'list', listKey(filters), page, { queued }] as const,
     stages: (filters: OrderFilters) => ['orders', 'stages', scopeKey(filters)] as const,
-    needsDriver: (filters: OrderFilters) =>
-      ['orders', 'needs-driver', scopeKey(filters)] as const,
+    needsDriver: (filters: OrderFilters, queued: readonly string[]) =>
+      ['orders', 'needs-driver', scopeKey(filters), { queued }] as const,
   },
   /** The live map. Keyed by region only: its time window slides with the clock and is
    * resolved inside the query (see lib/services/dispatch.ts), not part of its identity. */
@@ -69,5 +74,10 @@ export const queryKeys = {
     all: ['dispatch'] as const,
     orders: (region: string) => ['dispatch', 'orders', { region }] as const,
     drivers: (region: string) => ['dispatch', 'drivers', { region }] as const,
+  },
+  /** The driver queue (`DispatchQueue`), read by the map and the board alike. */
+  queue: {
+    all: ['queue'] as const,
+    list: (region: string) => ['queue', 'list', { region }] as const,
   },
 } as const;

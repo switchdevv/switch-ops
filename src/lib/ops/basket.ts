@@ -2,7 +2,12 @@ import type { OrderRow } from '@/types/order';
 
 /** One dish on an order, with its per-line detail already paired to it. */
 export type BasketLine = {
-  /** Stable across renders: the Food objectId, or the index when the dish is gone. */
+  /**
+   * Unique within the basket: the line's position plus its Food objectId. The id alone
+   * is not enough — the same dish ordered twice with different options is two lines
+   * pointing at one Food. The basket is written once at checkout and never reordered,
+   * so the position is as stable as the line itself.
+   */
   key: string;
   name: string | undefined;
   quantity: number;
@@ -43,7 +48,7 @@ export function readBasket(order: Pick<OrderRow, 'food' | 'options'>): BasketLin
     const line = values[index]?.[dish.objectId];
 
     return {
-      key: dish.objectId || `line-${index}`,
+      key: `${index}-${dish.objectId ?? ''}`,
       name: dish.name,
       // A line with no recorded quantity is one unit — that is how the apps' own
       // exports read it, and showing "×0" next to a real dish would be a lie.

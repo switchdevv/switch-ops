@@ -130,6 +130,8 @@ export type MapPalette = {
   warning: string;
   danger: string;
   faint: string;
+  /** An order lined up behind a busy driver, and the way their queue runs. */
+  queued: string;
   /** The halo under a line — the surface colour, so a route reads over any street. */
   casing: string;
 };
@@ -141,6 +143,7 @@ export const MAP_PALETTE: Record<MapTheme, MapPalette> = {
     warning: '#F59E0A',
     danger: '#DC2627',
     faint: '#8A8F98',
+    queued: '#7C3AED',
     casing: '#FFFFFF',
   },
   dark: {
@@ -149,6 +152,7 @@ export const MAP_PALETTE: Record<MapTheme, MapPalette> = {
     warning: '#FCBF26',
     danger: '#F87172',
     faint: '#848A90',
+    queued: '#A78BFA',
     casing: '#26292B',
   },
 };
@@ -199,11 +203,12 @@ const REGION_LAYERS: LayerSpecification[] = [
 ];
 
 /**
- * Three kinds of line, told apart by their dash before their colour — so they still
+ * Four kinds of line, told apart by their dash before their colour — so they still
  * read for a colourblind dispatcher:
  *
  * - solid: the order's own trip, restaurant to customer, in the order's colour;
  * - dashed: a driver heading to their next stop;
+ * - long-dashed: the way a driver's queue runs, from one drop-off to the next pickup;
  * - dotted: a free driver who could be sent to this restaurant.
  */
 const ROUTE_LAYERS: LayerSpecification[] = [
@@ -234,6 +239,14 @@ const ROUTE_LAYERS: LayerSpecification[] = [
     filter: ['==', ['get', 'kind'], 'approach'],
     layout: { 'line-join': 'round' },
     paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-dasharray': [2, 1.5] },
+  },
+  {
+    id: 'ops-route-queued',
+    type: 'line',
+    source: ROUTE_SOURCE,
+    filter: ['==', ['get', 'kind'], 'queued'],
+    layout: { 'line-join': 'round' },
+    paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-dasharray': [4, 2] },
   },
   {
     id: 'ops-route-candidate',
@@ -313,10 +326,25 @@ function tripColor(phase: OrderPhase | undefined, palette: MapPalette): string {
       return palette.danger;
     case 'awaitingRestaurant':
       return palette.warning;
+    case 'queued':
+      return palette.queued;
     case 'pickup':
       return palette.faint;
     default:
       return palette.accent;
+  }
+}
+
+function legColor(leg: RouteLeg, palette: MapPalette): string {
+  switch (leg.kind) {
+    case 'candidate':
+      return palette.success;
+    case 'approach':
+      return palette.accent;
+    case 'queued':
+      return palette.queued;
+    default:
+      return tripColor(leg.phase, palette);
   }
 }
 
@@ -327,12 +355,7 @@ export function routeFeatures(legs: RouteLeg[], palette: MapPalette): GeoJSON.Fe
       type: 'Feature',
       properties: {
         kind: leg.kind,
-        color:
-          leg.kind === 'candidate'
-            ? palette.success
-            : leg.kind === 'approach'
-              ? palette.accent
-              : tripColor(leg.phase, palette),
+        color: legColor(leg, palette),
         casing: palette.casing,
       },
       geometry: {

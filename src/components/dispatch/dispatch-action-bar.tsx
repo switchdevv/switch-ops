@@ -4,18 +4,34 @@ import { Button } from '@heroui/react';
 import { shortId } from '@/lib/format';
 import type { MessageKey } from '@/lib/i18n/dictionary';
 import { useI18n } from '@/lib/i18n/provider';
-import { distanceMeters, isAssignable, type DispatchModel } from '@/lib/ops/dispatch';
-import type { AssignRequest } from '@/hooks/use-dispatch';
+import {
+  aheadOf,
+  distanceMeters,
+  isAssignable,
+  lastStopOf,
+  type DispatchModel,
+} from '@/lib/ops/dispatch';
+import type { DispatchRequest } from '@/hooks/use-dispatch';
 import { AlertIcon, CheckIcon, CloseIcon } from '@/components/icons';
-
-/** What the last assignment did, once it is no longer in flight. */
-export type DispatchFeedback =
-  | { kind: 'success'; driverName: string; orderId: string }
-  | { kind: 'error'; messageKey: MessageKey };
+import { driverNameOf } from './dispatch-queue';
 
 /**
- * The confirmation strip: one deliberate step between clicking Assign and a driver's
- * phone ringing.
+ * What the last action did, once it is no longer in flight. `change` is an edit to a
+ * queue — moving an order up, or taking it out.
+ */
+export type DispatchFeedback =
+  | { kind: 'success'; action: 'assign' | 'queue'; driverName: string; orderId: string }
+  | { kind: 'error'; action: 'assign' | 'queue' | 'change'; messageKey: MessageKey };
+
+const FAILED_TITLE: Record<'assign' | 'queue' | 'change', MessageKey> = {
+  assign: 'dispatch.action.failed',
+  queue: 'dispatch.action.queueFailed',
+  change: 'dispatch.lineUp.changeFailed',
+};
+
+/**
+ * The confirmation strip: one deliberate step between clicking Assign (or Queue) and a
+ * driver's phone ringing — now, or the moment they deliver.
  *
  * A strip at the foot of the panel rather than a modal, because dispatch is a rhythm —
  * a dialog that steals focus and has to be dismissed turns twenty assignments an evening
@@ -33,7 +49,7 @@ export function DispatchActionBar({
   onDismiss,
   now,
 }: {
-  pending: AssignRequest | null;
+  pending: DispatchRequest | null;
   model: DispatchModel;
   isSending: boolean;
   feedback: DispatchFeedback | null;
@@ -42,19 +58,29 @@ export function DispatchActionBar({
   onDismiss: () => void;
   now: number;
 }) {
-  const { t, format } = useI18n();
+  const { t, tCount, format } = useI18n();
 
   if (pending) {
     const order = model.ordersById.get(pending.orderId);
     const driver = model.driversById.get(pending.driverId);
     const driverName = driver?.row.fullname ?? driver?.row.username ?? t('common.none');
-    const away =
-      driver?.location && order?.pickup ? distanceMeters(driver.location, order.pickup) : null;
+    const isQueue = pending.kind === 'queue';
+
+    // For a queue, the distance that matters is from where the driver will finish, not
+    // from where they are now.
+    const from = driver ? (isQueue ? lastStopOf(model, driver) : driver.location) : null;
+    const away = from && order?.pickup ? distanceMeters(from, order.pickup) : null;
+
+    // Queueing an order that is already in someone else's line moves it.
+    const movingFrom =
+      isQueue && order?.queue?.kind === 'waiting' && order.queue.driverId !== pending.driverId
+        ? driverNameOf(model, order.queue.driverId, order.queue.entry.driver?.fullname)
+        : undefined;
 
     return (
       <div className="border-separator bg-surface shadow-raised flex flex-col gap-2 border-t p-3">
         <p className="text-body font-bold">
-          {t('dispatch.action.assignTitle', {
+          {t(isQueue ? 'dispatch.action.queueTitle' : 'dispatch.action.assignTitle', {
             driver: driverName,
             order: shortId(pending.orderId),
           })}
@@ -65,22 +91,31 @@ export function DispatchActionBar({
             {t('dispatch.action.assignDetail', {
               distance: format.distance(away),
               restaurant: order?.row.restaurant?.name ?? t('common.none'),
+              // Two orders from one restaurant read the same until the customer is named.
+              customer: order?.row.user?.fullname ?? t('common.none'),
             })}
           </p>
         )}
 
-        {/* The two things that make an assignment likely to go wrong, said before it is
-            made rather than explained after it fails. */}
+        {isQueue && driver && (
+          <p className="text-caption text-muted">
+            {tCount('dispatch.lineUp.ahead', aheadOf(driver))} · {t('dispatch.action.queueWhen')}
+          </p>
+        )}
+
+        {/* The things that make an assignment likely to go wrong, said before it is made
+            rather than explained after it fails. */}
         {order && order.phase === 'awaitingRestaurant' && (
           <Warning>{t('dispatch.action.earlyWarning')}</Warning>
         )}
-        {driver?.isStale && driver.seenAt !== null && (
+        {!isQueue && driver?.isStale && driver.seenAt !== null && (
           <Warning>
             {t('dispatch.action.staleWarning', {
               duration: format.elapsed(new Date(driver.seenAt).toISOString(), now),
             })}
           </Warning>
         )}
+        {movingFrom && <Warning>{t('dispatch.action.queueMove', { driver: movingFrom })}</Warning>}
         {/* Something changed under the dispatcher while the strip was open. */}
         {order && !isAssignable(order) && <Warning>{t('errors.orderTaken')}</Warning>}
 
@@ -89,7 +124,9 @@ export function DispatchActionBar({
             {t('dispatch.action.cancel')}
           </Button>
           <Button variant="primary" size="sm" onPress={onConfirm} isPending={isSending}>
-            {isSending ? t('dispatch.action.sending') : t('dispatch.action.confirm')}
+            {isQueue
+              ? t(isSending ? 'dispatch.action.queueSending' : 'dispatch.action.queueConfirm')
+              : t(isSending ? 'dispatch.action.sending' : 'dispatch.action.confirm')}
           </Button>
         </div>
       </div>
@@ -117,14 +154,14 @@ export function DispatchActionBar({
       )}
 
       <div className="min-w-0 flex-1">
-        {isError ? (
+        {feedback.kind === 'error' ? (
           <>
-            <p className="text-caption font-bold">{t('dispatch.action.failed')}</p>
+            <p className="text-caption font-bold">{t(FAILED_TITLE[feedback.action])}</p>
             <p className="text-caption">{t(feedback.messageKey)}</p>
           </>
         ) : (
           <p className="text-caption font-bold">
-            {t('dispatch.action.done', {
+            {t(feedback.action === 'queue' ? 'dispatch.action.queued' : 'dispatch.action.done', {
               driver: feedback.driverName,
               order: shortId(feedback.orderId),
             })}

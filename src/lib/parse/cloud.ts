@@ -6,7 +6,8 @@ import { getParse } from './client';
  * Every action ops takes on an order goes through one of these rather than a direct
  * object save, because the function does more than write the row: `assignDriver`, for
  * one, also notifies the driver it names. Saving `order.driver` from this console would
- * set the field and tell nobody. Same calls, same parameters as switch-dashboard's
+ * set the field and tell nobody. (Unassigning a driver is the exception, and does its own
+ * telling — see lib/services/order-actions.ts.) Same calls, same parameters as switch-dashboard's
  * `callFunction` (src/api/modules/cloud.js).
  */
 export function runFunction<Params extends Record<string, unknown>, Result = unknown>(

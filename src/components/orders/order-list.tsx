@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Alert, Button, Skeleton } from '@heroui/react';
 import { useI18n } from '@/lib/i18n/provider';
+import type { QueueSlot } from '@/lib/ops/queue';
 import { parseErrorKey } from '@/lib/parse/errors';
 import { ORDER_PAGE_SIZE, type OrdersPage } from '@/lib/services/orders';
 import type { OrderRow } from '@/types/order';
@@ -19,6 +20,7 @@ export function OrderList({
   isFetching,
   totalPages,
   now,
+  queueSlots,
   hasQuery,
   query,
   canWidenDates,
@@ -35,6 +37,8 @@ export function OrderList({
   isFetching: boolean;
   totalPages: number;
   now: number;
+  /** The orders lined up in a driver's queue, by order id. */
+  queueSlots: ReadonlyMap<string, QueueSlot>;
   hasQuery: boolean;
   query: string;
   /** The search is bounded by a date range that could be widened — see EmptyState. */
@@ -141,6 +145,7 @@ export function OrderList({
                   key={order.objectId}
                   order={order}
                   now={now}
+                  queueSlot={queueSlots.get(order.objectId)}
                   isExpanded={expanded.has(order.objectId)}
                   onToggle={() => toggle(order.objectId)}
                 />

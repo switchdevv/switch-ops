@@ -3,6 +3,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query/keys';
 import { assignDriver, listOngoingOrders, listOnlineDrivers } from '@/lib/services/dispatch';
+import { settleQueueAfterAssign } from '@/lib/services/queue';
 
 /**
  * How often the live map re-asks while Live is on.
@@ -44,7 +45,28 @@ export function useOnlineDrivers(region: string, isLive: boolean) {
 export type AssignRequest = { orderId: string; driverId: string };
 
 /**
- * Assigning a driver — the one write this console makes.
+ * What the confirmation strip is holding: a driver put on an order now (`assign`), or an
+ * order lined up behind a driver who is on another job (`queue`).
+ */
+export type DispatchRequest = AssignRequest & { kind: 'assign' | 'queue' };
+
+/**
+ * Puts a driver on an order and takes the order out of every queue — the whole of a manual
+ * assign, shared by the map's Assign and the confirm step's "Confirm & send".
+ */
+export async function sendDriver({ orderId, driverId }: AssignRequest): Promise<void> {
+  await assignDriver(orderId, driverId);
+  // After the assign, never instead of it: the driver has been sent, and a queue that
+  // couldn't be updated (the class not created yet, a dropped connection) is no reason
+  // to report a failed assign. The runner still drops the row once the order shows
+  // the driver ops chose.
+  await settleQueueAfterAssign(orderId, driverId).catch((error: unknown) => {
+    if (process.env.NODE_ENV !== 'production') console.error('[queue] after assign', error);
+  });
+}
+
+/**
+ * Assigning a driver by hand.
  *
  * Nothing is updated optimistically. What `assignDriver` does beyond setting the field
  * (notifying the driver, and whatever the driver app does next) happens on the server,
@@ -55,11 +77,12 @@ export function useAssignDriver() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ orderId, driverId }: AssignRequest) => assignDriver(orderId, driverId),
+    mutationFn: sendDriver,
     // Settled, not just success: the refusals (a driver who went offline, an order
     // someone else just took) mean the map is behind, and re-reading is how it catches
     // up. The board's own lists and counts are re-read too — the same order is on it.
     onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.queue.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.dispatch.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.orders.all });
     },

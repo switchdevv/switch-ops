@@ -11,6 +11,7 @@ import {
   PHASE_COLOR_VAR,
   PHASE_LABEL_KEY,
   type DispatchCounts,
+  type RouteKind,
 } from '@/lib/ops/dispatch';
 import { ChevronDownIcon, FrameIcon, LayersIcon, MinusIcon, PlusIcon } from '@/components/icons';
 
@@ -180,6 +181,7 @@ export function MapLegend({
             <Group heading={t('dispatch.map.lines')}>
               <LineRow kind="trip" label={t('dispatch.map.trip')} />
               <LineRow kind="approach" label={t('dispatch.map.approach')} />
+              <LineRow kind="queued" label={t('dispatch.map.queued')} />
               <LineRow kind="candidate" label={t('dispatch.map.candidate')} />
               <p className="text-micro text-faint">{t('dispatch.map.straight')}</p>
               <LayerToggle
@@ -255,9 +257,24 @@ function SwatchRow({
   );
 }
 
-function LineRow({ kind, label }: { kind: 'trip' | 'approach' | 'candidate'; label: string }) {
-  const stroke =
-    kind === 'candidate' ? 'var(--success)' : kind === 'approach' ? 'var(--accent)' : 'var(--accent)';
+/** The same dash each kind of line is drawn with on the map (ROUTE_LAYERS in
+ * lib/map/basemap.ts), at legend size. */
+const LINE_DASH: Record<RouteKind, string | undefined> = {
+  trip: undefined,
+  approach: '5 4',
+  queued: '9 4',
+  candidate: '0.1 5',
+};
+
+const LINE_STROKE: Record<RouteKind, string> = {
+  trip: 'var(--accent)',
+  approach: 'var(--accent)',
+  queued: 'var(--queued)',
+  candidate: 'var(--success)',
+};
+
+function LineRow({ kind, label }: { kind: RouteKind; label: string }) {
+  const stroke = LINE_STROKE[kind];
 
   return (
     <span className="text-caption text-muted flex items-center gap-2">
@@ -270,7 +287,7 @@ function LineRow({ kind, label }: { kind: 'trip' | 'approach' | 'candidate'; lab
           style={{ stroke }}
           strokeWidth="2.5"
           strokeLinecap="round"
-          strokeDasharray={kind === 'trip' ? undefined : kind === 'approach' ? '5 4' : '0.1 5'}
+          strokeDasharray={LINE_DASH[kind]}
         />
       </svg>
       <span className="flex-1">{label}</span>

@@ -18,6 +18,7 @@ export type QueryParam =
   | { startsWith: { key: string; value: string } }
   | { matches: { key: string; value: string; modifiers?: string } }
   | { containedIn: { key: string; value: unknown[] } }
+  | { notContainedIn: { key: string; value: unknown[] } }
   | { exists: string }
   | { doesNotExist: string }
   | { include: string }
@@ -48,6 +49,8 @@ function applyParams(query: ReturnType<typeof newQuery>, params: QueryParam[]): 
       query.matches(param.matches.key, escapeRegex(param.matches.value), param.matches.modifiers);
     } else if ('containedIn' in param) {
       query.containedIn(param.containedIn.key, param.containedIn.value);
+    } else if ('notContainedIn' in param) {
+      query.notContainedIn(param.notContainedIn.key, param.notContainedIn.value);
     } else if ('exists' in param) query.exists(param.exists);
     else if ('doesNotExist' in param) query.doesNotExist(param.doesNotExist);
     else if ('include' in param) query.include(param.include);

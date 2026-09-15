@@ -3,11 +3,16 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { Button } from '@heroui/react';
+import { useQueueRunnerStatus } from '@/components/queue-runner';
+import { useNow } from '@/hooks/use-now';
 import { initials, shortId, splitPhones } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/provider';
 import { basketSize, readBasket } from '@/lib/ops/basket';
 import { formatClockTime } from '@/lib/ops/restaurant-hours';
 import {
+  aheadOf,
+  canQueueFor,
+  canSendAgain,
   canTakeOrders,
   distanceMeters,
   DRIVER_COLOR_VAR,
@@ -15,12 +20,14 @@ import {
   DRIVER_STATE_HINT_KEY,
   DRIVER_STATE_LABEL_KEY,
   isAssignable,
+  lastStopOf,
   nextStopOf,
   PHASE_COLOR_VAR,
   PHASE_HINT_KEY,
   PHASE_LABEL_KEY,
   rankDrivers,
   rankOrders,
+  rankQueueCandidates,
   type DispatchDriver,
   type DispatchModel,
   type DispatchOrder,
@@ -29,22 +36,42 @@ import {
   type LatLng,
   type Ranked,
 } from '@/lib/ops/dispatch';
+import {
+  DRIVER_OFFLINE,
+  holdOf,
+  isBeingSent,
+  QUEUE_TICK_MS,
+  sendStatusOf,
+  type LineHold,
+  type QueueSlot as QueueSlotModel,
+} from '@/lib/ops/queue';
+import type { MessageKey } from '@/lib/i18n/dictionary';
 import { ordersHref } from '@/lib/url/order-filters';
+import type { QueueEntry } from '@/types/queue';
+import { OrderActions } from '@/components/orders/order-actions';
 import { OrderBasket, OrderPayment } from '@/components/orders/order-contents';
 import { CopyValue } from '@/components/ui/copy-value';
+import { PickupBadge } from '@/components/ui/pickup-badge';
 import { StageChip } from '@/components/ui/stage-chip';
 import {
+  ArrowRightIcon,
+  BagIcon,
   ChevronLeftIcon,
+  ChevronUpIcon,
+  CloseIcon,
   ExternalLinkIcon,
   HomeIcon,
   NoteIcon,
   PhoneIcon,
+  QueueIcon,
+  RefreshIcon,
   SignalOffIcon,
   StoreIcon,
+  UserIcon,
 } from '@/components/icons';
-import { QueueOrderRow, Tag, type QueueHandlers } from './dispatch-queue';
+import { driverNameOf, QueueOrderRow, Tag, type QueueHandlers } from './dispatch-queue';
 import { HoursText } from './restaurant-hours-text';
-import type { AssignRequest } from '@/hooks/use-dispatch';
+import type { DispatchRequest } from '@/hooks/use-dispatch';
 
 /**
  * What one pin is, and what to do about it.
@@ -61,6 +88,20 @@ import type { AssignRequest } from '@/hooks/use-dispatch';
  * meaningfully different from "somewhere else in the city". */
 const CANDIDATE_PREVIEW = 5;
 
+/**
+ * Edits to a driver's queue. Unlike Assign and Queue these apply at once, without the
+ * confirmation strip: moving an order up or taking it out rings nobody's phone, and each
+ * is undone as easily as it was done.
+ */
+export type QueueActions = {
+  onRemove: (entry: QueueEntry) => void;
+  onMoveUp: (entry: QueueEntry, ahead: QueueEntry) => void;
+  /** Sends a refused order on the runner's next look instead of after its retry delay. */
+  onRetry: (entry: QueueEntry) => void;
+  /** An edit is in flight; the buttons wait for it. */
+  isChanging: boolean;
+};
+
 export type DetailProps = {
   model: DispatchModel;
   selection: DispatchSelection;
@@ -68,10 +109,20 @@ export type DetailProps = {
   handlers: QueueHandlers;
   onBack: () => void;
   /** Opens the confirmation strip at the foot of the panel. */
-  onRequestAssign: (request: AssignRequest) => void;
-  /** The assignment awaiting confirmation, so its row can show as armed. */
-  pendingAssign: AssignRequest | null;
+  onRequest: (request: DispatchRequest) => void;
+  /** The request awaiting confirmation, so its row can show as armed. */
+  pending: DispatchRequest | null;
+  queueActions: QueueActions;
 };
+
+function isArmed(
+  pending: DispatchRequest | null,
+  kind: DispatchRequest['kind'],
+  orderId: string,
+  driverId: string,
+): boolean {
+  return pending?.kind === kind && pending.orderId === orderId && pending.driverId === driverId;
+}
 
 export function DispatchDetail(props: DetailProps) {
   const { model, selection } = props;
@@ -100,8 +151,9 @@ function OrderDetail({
   now,
   handlers,
   onBack,
-  onRequestAssign,
-  pendingAssign,
+  onRequest,
+  pending,
+  queueActions,
 }: DetailProps & { order: DispatchOrder }) {
   const { t, tCount, format } = useI18n();
   const { row } = order;
@@ -111,10 +163,22 @@ function OrderDetail({
   const items = basketSize(readBasket(row));
   const trip = order.pickup && order.dropoff ? distanceMeters(order.pickup, order.dropoff) : null;
   const canAssign = isAssignable(order);
+  const isPickup = row.deliveryType !== 'delivery';
 
   const candidates = useMemo(
     () => (canAssign ? rankDrivers(order.pickup, model.drivers) : []),
     [canAssign, order.pickup, model.drivers],
+  );
+
+  // Everyone on a job, as the other way to get this order out: behind them, in turn.
+  // Not the driver it is already lined up behind.
+  const queuedFor = order.queue?.driverId;
+  const busyCandidates = useMemo(
+    () =>
+      canAssign
+        ? rankQueueCandidates(order.pickup, model).filter(({ item }) => item.id !== queuedFor)
+        : [],
+    [canAssign, order.pickup, model, queuedFor],
   );
 
   return (
@@ -132,18 +196,27 @@ function OrderDetail({
           <StageChip order={row} />
         </div>
 
-        <PhaseBadge order={order} />
+        {isPickup && <PickupBadge size="md" />}
+
+        <PhaseBadge
+          order={order}
+          hint={order.phase === 'queued' ? <QueueWaitHint order={order} model={model} /> : undefined}
+        />
 
         <p className="text-caption text-muted">
           {t('dispatch.detail.placed', { time: format.dateTime(row.createdAt) })} ·{' '}
           {format.elapsed(row.createdAt, now)} ·{' '}
-          {t(row.deliveryType === 'pickup' ? 'orders.type.pickup' : 'orders.type.delivery')}
+          {t(isPickup ? 'orders.type.pickup' : 'orders.type.delivery')}
           {items > 0 ? ` · ${tCount('orders.row.items', items)}` : ''} ·{' '}
           <span className="text-foreground font-bold">
             {format.money(row.options?.total, currency)}
           </span>
         </p>
       </header>
+
+      {/* Keyed by order: moving from one order to the next reuses this panel, and a
+          Confirm left armed must not carry over to an order nobody asked about. */}
+      <OrderActions key={order.id} order={row} />
 
       {row.options?.note && (
         <div className="bg-warning-soft text-warning-soft-foreground flex items-start gap-2 rounded-xl p-2.5">
@@ -173,8 +246,22 @@ function OrderDetail({
           {trip !== null && <span>{t('dispatch.detail.straightLine', { distance: format.distance(trip) })}</span>}
         </div>
 
-        {row.deliveryType === 'pickup' ? (
-          <p className="text-caption text-muted">{t('dispatch.detail.collectedByCustomer')}</p>
+        {isPickup ? (
+          <>
+            <p className="text-caption bg-surface-secondary flex items-start gap-2 rounded-lg px-2.5 py-2">
+              <BagIcon aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+              {t('dispatch.detail.collectedByCustomer')}
+            </p>
+            <Stop
+              icon={<UserIcon className="size-4" />}
+              eyebrow={t('orders.detail.customer')}
+              name={row.user?.fullname}
+              detail={undefined}
+              phone={row.user?.phone}
+              // Nothing to pin: the customer comes to the restaurant.
+              hasPin
+            />
+          </>
         ) : (
           <Stop
             icon={<HomeIcon className="size-4" />}
@@ -187,23 +274,35 @@ function OrderDetail({
         )}
       </Panel>
 
-      <Panel title={t('dispatch.detail.driver')}>
-        {driver ? (
-          <DriverLine
-            driver={driver}
-            now={now}
-            distanceTo={nextStopOf(order)}
-            onOpen={() => handlers.onSelect('driver', driver.id)}
-            onHover={handlers.onHover}
-          />
-        ) : row.deliveryType === 'pickup' ? (
-          <p className="text-caption text-muted">{t('dispatch.detail.collectedByCustomer')}</p>
-        ) : (
-          <p className="text-caption text-danger-soft-foreground bg-danger-soft rounded-lg px-2.5 py-2 font-bold">
-            {t('dispatch.detail.noDriverYet')}
-          </p>
-        )}
-      </Panel>
+      {/* No Driver panel on a pickup at all: an empty slot there reads as one waiting to
+          be filled, and nobody is ever sent to one. The board's detail leaves it out too. */}
+      {!isPickup && (
+        <Panel title={t('dispatch.detail.driver')}>
+          {driver ? (
+            <DriverLine
+              driver={driver}
+              now={now}
+              distanceTo={nextStopOf(order)}
+              onOpen={() => handlers.onSelect('driver', driver.id)}
+              onHover={handlers.onHover}
+            />
+          ) : order.queue ? (
+            <QueueSlot
+              order={order}
+              model={model}
+              now={now}
+              handlers={handlers}
+              queueActions={queueActions}
+              pending={pending}
+              onRequest={onRequest}
+            />
+          ) : (
+            <p className="text-caption text-danger-soft-foreground bg-danger-soft rounded-lg px-2.5 py-2 font-bold">
+              {t('dispatch.detail.noDriverYet')}
+            </p>
+          )}
+        </Panel>
+      )}
 
       {canAssign && (
         <CandidateDrivers
@@ -212,9 +311,19 @@ function OrderDetail({
           now={now}
           handlers={handlers}
           orderId={order.id}
-          pendingAssign={pendingAssign}
-          onRequestAssign={onRequestAssign}
+          pending={pending}
+          onRequest={onRequest}
           notice={order.phase === 'awaitingRestaurant' ? t('dispatch.detail.notAcceptedYet') : undefined}
+        />
+      )}
+
+      {canAssign && (
+        <QueueCandidates
+          candidates={busyCandidates}
+          handlers={handlers}
+          orderId={order.id}
+          pending={pending}
+          onRequest={onRequest}
         />
       )}
 
@@ -242,16 +351,26 @@ function DriverDetail({
   now,
   handlers,
   onBack,
-  onRequestAssign,
-  pendingAssign,
+  onRequest,
+  pending,
+  queueActions,
 }: DetailProps & { driver: DispatchDriver }) {
   const { t, format } = useI18n();
   const name = driver.row.fullname ?? driver.row.username ?? t('common.none');
-  const isAssignableDriver = canTakeOrders(driver);
+
+  // A free driver is sent an order now; one on a job has it lined up behind what they
+  // carry. Either way the list is the orders nobody has a driver for, nearest first — to
+  // where the driver is now, or to where they will finish.
+  const action: DispatchRequest['kind'] | null = canTakeOrders(driver)
+    ? 'assign'
+    : canQueueFor(driver)
+      ? 'queue'
+      : null;
+  const from = action === 'assign' ? driver.location : action === 'queue' ? lastStopOf(model, driver) : null;
 
   const waiting = useMemo(
-    () => (isAssignableDriver ? rankOrders(driver.location, model.orders) : []),
-    [isAssignableDriver, driver.location, model.orders],
+    () => (action ? rankOrders(from, model.orders) : []),
+    [action, from, model.orders],
   );
 
   return (
@@ -307,16 +426,31 @@ function DriverDetail({
         </Panel>
       )}
 
-      {isAssignableDriver ? (
+      <UpNext
+        driver={driver}
+        model={model}
+        now={now}
+        handlers={handlers}
+        queueActions={queueActions}
+        pending={pending}
+        onRequest={onRequest}
+      />
+
+      {action ? (
         <section className="flex flex-col gap-2">
-          <SectionTitle title={t('dispatch.detail.nearbyOrders')} hint={t('dispatch.detail.nearbyOrdersHint')} />
+          <SectionTitle
+            title={t(action === 'assign' ? 'dispatch.detail.nearbyOrders' : 'dispatch.lineUp.driverOrders')}
+            hint={t(action === 'assign' ? 'dispatch.detail.nearbyOrdersHint' : 'dispatch.lineUp.driverOrdersHint')}
+          />
           {waiting.length === 0 ? (
             <p className="text-caption text-success-soft-foreground bg-success-soft/60 rounded-lg px-2.5 py-2">
               {t('dispatch.detail.noNearbyOrders')}
             </p>
           ) : (
+            // Every waiting order, not the first five: which one this driver takes is the
+            // dispatcher's call, and the one they want is often not among the nearest.
             <ul className="flex flex-col gap-1.5">
-              {waiting.slice(0, CANDIDATE_PREVIEW).map(({ item, meters }, index) => (
+              {waiting.map(({ item, meters }, index) => (
                 <li key={item.key} className="flex items-center gap-2">
                   <button
                     type="button"
@@ -327,21 +461,33 @@ function DriverDetail({
                   >
                     <Rank value={index + 1} />
                     <span className="flex min-w-0 flex-col leading-tight">
-                      <span className="text-body truncate font-bold">
-                        {item.row.restaurant?.name ?? t('common.none')}
+                      {/* Restaurant to customer, as the order list reads: two orders from
+                          the same restaurant are told apart by who they are for. */}
+                      <span className="text-body flex min-w-0 items-center gap-1.5">
+                        <span className="truncate font-bold">
+                          {item.row.restaurant?.name ?? t('common.none')}
+                        </span>
+                        <ArrowRightIcon aria-hidden className="text-faint size-3 shrink-0" />
+                        <span className="text-muted truncate">
+                          {item.row.user?.fullname ?? t('common.none')}
+                        </span>
                       </span>
-                      <span className="text-caption text-muted tabular truncate">
-                        #{shortId(item.id)} ·{' '}
-                        {meters === null ? t('dispatch.queue.noPosition') : format.distance(meters)} ·{' '}
-                        {format.elapsed(item.row.createdAt, now)}
+                      <span className="text-caption text-muted tabular flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                        <span>
+                          #{shortId(item.id)} ·{' '}
+                          {meters === null ? t('dispatch.queue.noPosition') : format.distance(meters)} ·{' '}
+                          {format.elapsed(item.row.createdAt, now)}
+                        </span>
+                        {item.phase === 'awaitingRestaurant' && (
+                          <Tag tone="warning">{t('dispatch.kpi.awaitingRestaurant')}</Tag>
+                        )}
                       </span>
                     </span>
                   </button>
-                  <AssignButton
-                    isArmed={
-                      pendingAssign?.orderId === item.id && pendingAssign.driverId === driver.id
-                    }
-                    onPress={() => onRequestAssign({ orderId: item.id, driverId: driver.id })}
+                  <ActionButton
+                    label={t(action === 'assign' ? 'dispatch.detail.assign' : 'dispatch.lineUp.queue')}
+                    isArmed={isArmed(pending, action, item.id, driver.id)}
+                    onPress={() => onRequest({ kind: action, orderId: item.id, driverId: driver.id })}
                   />
                 </li>
               ))}
@@ -350,7 +496,7 @@ function DriverDetail({
         </section>
       ) : (
         <p className="text-caption text-muted bg-surface-secondary/70 rounded-lg px-2.5 py-2">
-          {t(driver.orderIds.length > 0 ? 'dispatch.detail.busyNotice' : 'dispatch.detail.offlineNotice')}
+          {t('dispatch.detail.offlineNotice')}
         </p>
       )}
 
@@ -557,7 +703,9 @@ function SectionTitle({ title, hint }: { title: string; hint?: string }) {
   );
 }
 
-function PhaseBadge({ order }: { order: DispatchOrder }) {
+/** `hint` replaces the phase's fixed one-liner, for a phase whose answer depends on more
+ * than the phase. */
+function PhaseBadge({ order, hint }: { order: DispatchOrder; hint?: ReactNode }) {
   const { t } = useI18n();
   // The kitchen has bagged it. Same tag the queue row carries, kept here until the food
   // has actually left the restaurant (status 2), after which "ready" says nothing.
@@ -577,8 +725,76 @@ function PhaseBadge({ order }: { order: DispatchOrder }) {
         </span>
         {isReady && <Tag tone="success">{t('orders.row.ready')}</Tag>}
       </span>
-      <span className="text-micro text-faint">{t(PHASE_HINT_KEY[order.phase])}</span>
+      {hint ?? <span className="text-micro text-faint">{t(PHASE_HINT_KEY[order.phase])}</span>}
     </div>
+  );
+}
+
+/**
+ * What a queued order is waiting on, in the line under its phase — the first thing a
+ * dispatcher reads about it.
+ *
+ * The phase alone can't say. A fixed "behind a driver on another job" was shown for every
+ * queued order, including one whose driver was free with their app switched off: the one
+ * case where the order won't go out until someone calls the driver. So that case, and a
+ * refused send, are in warning colour.
+ */
+function QueueWaitHint({ order, model }: { order: DispatchOrder; model: DispatchModel }) {
+  const { t } = useI18n();
+  const now = useNow(1000);
+  const slot = order.queue;
+  const driver = slot ? model.driversById.get(slot.driverId) : undefined;
+  const fallback = <span className="text-micro text-faint">{t(PHASE_HINT_KEY[order.phase])}</span>;
+  // Nothing to judge the hold on without the driver's row; the fixed hint is still true.
+  if (!slot || !driver) return fallback;
+
+  const status = sendStatusOf(slot, lineHoldOf(driver, now), now);
+  let key: MessageKey;
+  let isWarning = false;
+  switch (status.kind) {
+    case 'behind':
+      key = 'dispatch.lineUp.waitBehind';
+      break;
+    case 'held':
+      key =
+        status.hold === 'busy'
+          ? 'dispatch.lineUp.waitBusy'
+          : status.hold === 'offer'
+            ? 'dispatch.lineUp.waitOffer'
+            : 'dispatch.lineUp.waitOffline';
+      isWarning = status.hold === 'offline';
+      break;
+    case 'ready':
+    case 'sending':
+      key = 'dispatch.lineUp.waitSending';
+      break;
+    case 'retrying':
+      key = 'dispatch.lineUp.waitRetrying';
+      isWarning = true;
+      break;
+    case 'offered':
+      key = 'dispatch.lineUp.waitOffered';
+      break;
+    case 'lapsed':
+      // Not a queued phase: a lapsed offer puts the order back to needing a driver.
+      return fallback;
+  }
+
+  const name = driverNameOf(model, slot.driverId, slot.entry.driver?.fullname) ?? t('common.none');
+  return (
+    <span className={'text-micro ' + (isWarning ? 'text-warning-soft-foreground font-bold' : 'text-faint')}>
+      {t(key, { driver: name })}
+    </span>
+  );
+}
+
+/** Why the first order in `driver`'s line can't go yet, judged on the caller's clock
+ * rather than the one the model was built with. */
+function lineHoldOf(driver: DispatchDriver, now: number): LineHold | null {
+  return holdOf(
+    { driverId: driver.id, driver: driver.row, entries: driver.queue.entries, offer: driver.queue.offer },
+    { isBusy: driver.orderIds.length > 0, isOnline: driver.row.driverActive === true },
+    now,
   );
 }
 
@@ -679,8 +895,8 @@ function CandidateDrivers({
   now,
   handlers,
   orderId,
-  pendingAssign,
-  onRequestAssign,
+  pending,
+  onRequest,
   notice,
 }: {
   candidates: Ranked<DispatchDriver>[];
@@ -688,8 +904,8 @@ function CandidateDrivers({
   now: number;
   handlers: QueueHandlers;
   orderId: string;
-  pendingAssign: AssignRequest | null;
-  onRequestAssign: (request: AssignRequest) => void;
+  pending: DispatchRequest | null;
+  onRequest: (request: DispatchRequest) => void;
   /** Shown above the list — the caveat that this order isn't accepted yet. */
   notice?: string;
 }) {
@@ -742,9 +958,10 @@ function CandidateDrivers({
                   </span>
                   {item.isStale && <SignalOffIcon aria-hidden className="text-warning-soft-foreground size-4 shrink-0" />}
                 </button>
-                <AssignButton
-                  isArmed={pendingAssign?.orderId === orderId && pendingAssign.driverId === item.id}
-                  onPress={() => onRequestAssign({ orderId, driverId: item.id })}
+                <ActionButton
+                  label={t('dispatch.detail.assign')}
+                  isArmed={isArmed(pending, 'assign', orderId, item.id)}
+                  onPress={() => onRequest({ kind: 'assign', orderId, driverId: item.id })}
                 />
               </li>
             ))}
@@ -767,11 +984,464 @@ function CandidateDrivers({
   );
 }
 
-function AssignButton({ isArmed, onPress }: { isArmed: boolean; onPress: () => void }) {
+/**
+ * Drivers on a job this order could be lined up behind, by how near they will finish.
+ * The second way to get an order out when no free driver is close: it goes the moment
+ * one of these delivers what they carry.
+ */
+function QueueCandidates({
+  candidates,
+  handlers,
+  orderId,
+  pending,
+  onRequest,
+}: {
+  candidates: Ranked<DispatchDriver>[];
+  handlers: QueueHandlers;
+  orderId: string;
+  pending: DispatchRequest | null;
+  onRequest: (request: DispatchRequest) => void;
+}) {
+  const { t, tCount, format } = useI18n();
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? candidates : candidates.slice(0, CANDIDATE_PREVIEW);
+
+  return (
+    <section className="flex flex-col gap-2">
+      <SectionTitle title={t('dispatch.lineUp.candidates')} hint={t('dispatch.lineUp.candidatesHint')} />
+
+      {candidates.length === 0 ? (
+        <p className="text-caption text-muted">{t('dispatch.lineUp.noCandidates')}</p>
+      ) : (
+        <>
+          <ul className="flex flex-col gap-1.5">
+            {shown.map(({ item, meters }, index) => (
+              <li key={item.key} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlers.onSelect('driver', item.id)}
+                  onPointerEnter={() => handlers.onHover(item.key)}
+                  onPointerLeave={() => handlers.onHover(null)}
+                  className="hover:bg-surface-secondary focus-visible:ring-focus flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-start transition-colors outline-none focus-visible:ring-2"
+                >
+                  <Rank value={index + 1} />
+                  <span className="flex min-w-0 flex-col leading-tight">
+                    <span className="text-body truncate font-bold">
+                      {item.row.fullname ?? item.row.username ?? t('common.none')}
+                    </span>
+                    <span className="text-caption text-muted tabular truncate">
+                      {tCount('dispatch.lineUp.ahead', aheadOf(item))} ·{' '}
+                      {meters === null ? t('dispatch.queue.noPosition') : format.distance(meters)}
+                    </span>
+                  </span>
+                </button>
+                <ActionButton
+                  label={t('dispatch.lineUp.queue')}
+                  isArmed={isArmed(pending, 'queue', orderId, item.id)}
+                  onPress={() => onRequest({ kind: 'queue', orderId, driverId: item.id })}
+                />
+              </li>
+            ))}
+          </ul>
+
+          {candidates.length > CANDIDATE_PREVIEW && (
+            <button
+              type="button"
+              onClick={() => setShowAll((value) => !value)}
+              className="text-caption text-link hover:underline focus-visible:ring-focus w-fit rounded font-bold outline-none focus-visible:ring-2"
+            >
+              {showAll
+                ? t('dispatch.detail.showFewer')
+                : t('dispatch.detail.showAll', { count: candidates.length })}
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Where a queued order's send stands, in words — waiting, about to go, going, refused and
+ * retrying, sent, or sent and never taken — with what a dispatcher can do about it.
+ *
+ * Keeps its own one-second clock rather than the panel's fifteen: "going out in 3 s" and
+ * "trying again in 8 s" are only worth saying if they count down. The line's hold is
+ * worked out again on that clock for the same reason — the model's was decided up to
+ * fifteen seconds ago, and a retry that has come due would still read as waiting.
+ */
+function SendStatusLine({
+  slot,
+  driver,
+  queueActions,
+  sendAgain,
+}: {
+  slot: QueueSlotModel;
+  /** The slot's driver, when the map has them. */
+  driver: DispatchDriver | undefined;
+  queueActions: QueueActions;
+  /** Offered when the driver could be sent it again right now. */
+  sendAgain?: { isArmed: boolean; onPress: () => void };
+}) {
+  const { t, tCount, format } = useI18n();
+  const now = useNow(1000);
+  const runner = useQueueRunnerStatus();
+
+  const hold = driver ? lineHoldOf(driver, now) : null;
+  const status = sendStatusOf(slot, hold, now);
+
+  const reasonOf = (error: string) =>
+    error === DRIVER_OFFLINE
+      ? t('dispatch.lineUp.refusedOffline')
+      : t('dispatch.lineUp.refusedOther', { code: error });
+  const isoOf = (time: number | null) => (time === null ? null : new Date(time).toISOString());
+  const attempts = 'attempts' in status && status.attempts > 1 ? tCount('dispatch.lineUp.attempts', status.attempts) : null;
+
+  let tone = 'text-muted';
+  let lines: string[];
+  switch (status.kind) {
+    case 'behind':
+      lines = [tCount('dispatch.lineUp.behind', status.position - 1)];
+      break;
+    case 'held': {
+      const current = driver?.orderIds[0];
+      // Offline is the one hold that doesn't clear by itself: someone has to call the driver.
+      if (status.hold === 'offline') tone = 'text-warning-soft-foreground font-bold';
+      lines = [
+        status.hold === 'busy'
+          ? current
+            ? t('dispatch.lineUp.holdBusy', { order: shortId(current) })
+            : t('dispatch.lineUp.holdBusyUnknown')
+          : status.hold === 'offer'
+            ? t('dispatch.lineUp.holdOffer', { order: shortId(driver?.queue.offeredOrderId ?? undefined) })
+            : t('dispatch.lineUp.holdOffline'),
+      ];
+      if (status.lastError) lines.push(t('dispatch.lineUp.lastRefusal', { reason: reasonOf(status.lastError) }));
+      break;
+    }
+    case 'ready': {
+      tone = 'text-queued-soft-foreground font-bold';
+      // The runner's next look, when this browser runs it: the one after its last.
+      const nextLook = runner.lastTickAt === null ? null : runner.lastTickAt + QUEUE_TICK_MS;
+      lines = [
+        nextLook !== null && nextLook > now
+          ? t('dispatch.lineUp.sendReadyIn', { duration: format.span(nextLook - now) })
+          : t('dispatch.lineUp.sendReady'),
+      ];
+      if (status.lastError) lines.push(t('dispatch.lineUp.lastRefusal', { reason: reasonOf(status.lastError) }));
+      break;
+    }
+    case 'sending':
+      tone = 'text-queued-soft-foreground font-bold';
+      lines = [t('dispatch.lineUp.holdSending')];
+      break;
+    case 'retrying':
+      tone = 'text-warning-soft-foreground font-bold';
+      lines = [
+        status.retryAt > now
+          ? t('dispatch.lineUp.sendRetrying', {
+              reason: reasonOf(status.lastError),
+              duration: format.span(status.retryAt - now),
+            })
+          : t('dispatch.lineUp.sendRetryDue', { reason: reasonOf(status.lastError) }),
+      ];
+      break;
+    case 'offered':
+      lines = [
+        t('dispatch.lineUp.sendOffered', {
+          time: format.clock(isoOf(status.sentAt)),
+          ago: format.relative(isoOf(status.sentAt), now),
+        }),
+      ];
+      if (status.expiresAt !== null && status.expiresAt > now) {
+        lines.push(t('dispatch.lineUp.offerRunsOut', { duration: format.span(status.expiresAt - now) }));
+      }
+      break;
+    case 'lapsed':
+      tone = 'text-danger-soft-foreground font-bold';
+      lines = [
+        t('dispatch.lineUp.sendLapsed', {
+          time: format.clock(isoOf(status.sentAt)),
+          ago: format.relative(isoOf(status.sentAt), now),
+        }),
+      ];
+      break;
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className={'text-caption tabular ' + tone}>
+        {lines.join(' ')}
+        {attempts && <span className="text-faint font-normal"> · {attempts}</span>}
+      </p>
+
+      {status.kind === 'retrying' && (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-fit"
+          isDisabled={queueActions.isChanging}
+          onPress={() => queueActions.onRetry(slot.entry)}
+        >
+          <RefreshIcon aria-hidden className="size-3.5" />
+          {t('dispatch.lineUp.retryNow')}
+        </Button>
+      )}
+
+      {sendAgain && (status.kind === 'offered' || status.kind === 'lapsed') && (
+        <ActionButton label={t('dispatch.lineUp.sendAgain')} isArmed={sendAgain.isArmed} onPress={sendAgain.onPress} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The order's place in a driver's queue, in its Driver panel — which is where a
+ * dispatcher looks to find out who is taking it. An offer that ran out is shown here too,
+ * in red: the order needs a driver again, and the first question is what became of the
+ * last one.
+ */
+function QueueSlot({
+  order,
+  model,
+  now,
+  handlers,
+  queueActions,
+  pending,
+  onRequest,
+}: {
+  order: DispatchOrder;
+  model: DispatchModel;
+  now: number;
+  handlers: QueueHandlers;
+  queueActions: QueueActions;
+  pending: DispatchRequest | null;
+  onRequest: (request: DispatchRequest) => void;
+}) {
   const { t } = useI18n();
+  const slot = order.queue!;
+  const driver = model.driversById.get(slot.driverId);
+  const name = driverNameOf(model, slot.driverId, slot.entry.driver?.fullname) ?? t('common.none');
+  // Sending again is a hand assign, through the same confirmation strip, to the same driver.
+  const canResend = slot.kind !== 'waiting' && driver !== undefined && isAssignable(order) && canSendAgain(driver, order.id);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p
+        className={
+          'text-caption flex items-start gap-2 rounded-lg px-2.5 py-2 font-bold ' +
+          (slot.kind === 'lapsed'
+            ? 'bg-danger-soft text-danger-soft-foreground'
+            : 'bg-queued-soft text-queued-soft-foreground')
+        }
+      >
+        <QueueIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+        {slot.kind === 'waiting'
+          ? t('dispatch.lineUp.slotWaiting', { position: slot.position, driver: name })
+          : slot.kind === 'offered'
+            ? t('dispatch.lineUp.slotOffered', { driver: name })
+            : t('dispatch.lineUp.slotLapsed', { driver: name })}
+      </p>
+
+      {/* No distance on this line: how far they are *now* says nothing about an order
+          they collect after the ones ahead of it. */}
+      {driver && (
+        <DriverLine
+          driver={driver}
+          now={now}
+          distanceTo={null}
+          onOpen={() => handlers.onSelect('driver', driver.id)}
+          onHover={handlers.onHover}
+        />
+      )}
+
+      <SendStatusLine
+        slot={slot}
+        driver={driver}
+        queueActions={queueActions}
+        sendAgain={
+          canResend
+            ? {
+                isArmed: isArmed(pending, 'assign', order.id, slot.driverId),
+                onPress: () => onRequest({ kind: 'assign', orderId: order.id, driverId: slot.driverId }),
+              }
+            : undefined
+        }
+      />
+
+      {slot.kind === 'waiting' && (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-fit"
+          isDisabled={queueActions.isChanging || isBeingSent(slot.entry, now)}
+          onPress={() => queueActions.onRemove(slot.entry)}
+        >
+          {t('dispatch.lineUp.remove')}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A driver's queue, next first: the order sent and not yet accepted, then the line.
+ * Each row opens its order; the line can be reordered and trimmed in place.
+ */
+function UpNext({
+  driver,
+  model,
+  now,
+  handlers,
+  queueActions,
+  pending,
+  onRequest,
+}: {
+  driver: DispatchDriver;
+  model: DispatchModel;
+  now: number;
+  handlers: QueueHandlers;
+  queueActions: QueueActions;
+  pending: DispatchRequest | null;
+  onRequest: (request: DispatchRequest) => void;
+}) {
+  const { t } = useI18n();
+  const { entries, offeredOrderId, offer } = driver.queue;
+  if (entries.length === 0 && !offeredOrderId) return null;
+
+  const offered = offeredOrderId ? model.ordersById.get(offeredOrderId) : undefined;
+  const canResend =
+    offeredOrderId !== null && offered !== undefined && isAssignable(offered) && canSendAgain(driver, offeredOrderId);
+
+  return (
+    <Panel title={t('dispatch.lineUp.title')} isFlush>
+      <p className="text-micro text-faint border-separator/60 border-b px-3 py-1.5">
+        {t('dispatch.lineUp.titleHint')}
+      </p>
+      <ul className="flex flex-col">
+        {offeredOrderId && (
+          <li className="border-separator/60 flex items-start gap-2 border-b px-3 py-2">
+            <QueueIcon aria-hidden className="text-queued-soft-foreground mt-0.5 size-4 shrink-0" />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
+              <span className="text-body tabular truncate font-bold">
+                #{shortId(offeredOrderId)} · {offered?.row.restaurant?.name ?? t('dispatch.lineUp.unlisted')}
+              </span>
+              {offer ? (
+                <SendStatusLine
+                  slot={{ kind: 'offered', entry: offer, driverId: driver.id }}
+                  driver={driver}
+                  queueActions={queueActions}
+                  sendAgain={
+                    canResend
+                      ? {
+                          isArmed: isArmed(pending, 'assign', offeredOrderId, driver.id),
+                          onPress: () => onRequest({ kind: 'assign', orderId: offeredOrderId, driverId: driver.id }),
+                        }
+                      : undefined
+                  }
+                />
+              ) : (
+                <span className="text-caption text-muted">{t('dispatch.lineUp.offered')}</span>
+              )}
+            </span>
+          </li>
+        )}
+
+        {entries.map((entry, index) => {
+          const orderId = entry.order?.objectId ?? '';
+          const order = model.ordersById.get(orderId);
+          const ahead = entries[index - 1];
+          const isSending = isBeingSent(entry, now);
+          return (
+            <li key={entry.objectId} className="border-separator/60 flex flex-col gap-1 border-b px-3 py-2 last:border-b-0">
+              <div className="flex items-center gap-2">
+                <Rank value={index + 1} />
+                <button
+                  type="button"
+                  disabled={!order}
+                  onClick={() => handlers.onSelect('order', orderId)}
+                  onPointerEnter={() => order && handlers.onHover(order.key)}
+                  onPointerLeave={() => handlers.onHover(null)}
+                  className="hover:bg-surface-secondary focus-visible:ring-focus flex min-w-0 flex-1 flex-col rounded-lg px-1.5 py-0.5 text-start leading-tight transition-colors outline-none focus-visible:ring-2 disabled:hover:bg-transparent"
+                >
+                  <span className="text-body tabular truncate font-bold">
+                    #{shortId(orderId)} · {order?.row.restaurant?.name ?? t('dispatch.lineUp.unlisted')}
+                  </span>
+                  {order && (
+                    <span className="text-caption text-muted truncate">
+                      {order.row.user?.fullname ?? t('common.none')}
+                    </span>
+                  )}
+                </button>
+                <IconAction
+                  label={t('dispatch.lineUp.moveUp')}
+                  isDisabled={!ahead || queueActions.isChanging || isSending || isBeingSent(ahead, now)}
+                  onPress={() => ahead && queueActions.onMoveUp(entry, ahead)}
+                >
+                  <ChevronUpIcon className="size-4" />
+                </IconAction>
+                <IconAction
+                  label={t('dispatch.lineUp.remove')}
+                  isDisabled={queueActions.isChanging || isSending}
+                  onPress={() => queueActions.onRemove(entry)}
+                >
+                  <CloseIcon className="size-4" />
+                </IconAction>
+              </div>
+              {index === 0 && (
+                <span className="ps-8">
+                  <SendStatusLine
+                    slot={{ kind: 'waiting', entry, driverId: driver.id, position: 1 }}
+                    driver={driver}
+                    queueActions={queueActions}
+                  />
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Panel>
+  );
+}
+
+function IconAction({
+  label,
+  isDisabled,
+  onPress,
+  children,
+}: {
+  label: string;
+  isDisabled: boolean;
+  onPress: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={isDisabled}
+      onClick={onPress}
+      className="text-muted hover:text-foreground hover:bg-surface-secondary focus-visible:ring-focus grid size-7 shrink-0 place-items-center rounded-lg transition-colors outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
+
+function ActionButton({
+  label,
+  isArmed,
+  onPress,
+}: {
+  label: string;
+  isArmed: boolean;
+  onPress: () => void;
+}) {
   return (
     <Button variant={isArmed ? 'primary' : 'secondary'} size="sm" onPress={onPress} className="shrink-0">
-      {t('dispatch.detail.assign')}
+      {label}
     </Button>
   );
 }
