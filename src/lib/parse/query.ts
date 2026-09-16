@@ -32,7 +32,10 @@ export type QueryParam =
   | { greaterThan: { key: string; value: unknown } }
   | { lessThan: { key: string; value: unknown } }
   | { greaterThanOrEqualTo: { key: string; value: unknown } }
-  | { lessThanOrEqualTo: { key: string; value: unknown } };
+  | { lessThanOrEqualTo: { key: string; value: unknown } }
+  /** The pointer at `key` must match a query on `className` — e.g. a support message whose
+   * sender (`user`) is in a region, when the message row has no region of its own. */
+  | { matchesQuery: { key: string; className: string; params: QueryParam[] } };
 
 function newQuery(collection: string) {
   const ParseQuery = getParse().Query;
@@ -67,6 +70,10 @@ function applyParams(query: ReturnType<typeof newQuery>, params: QueryParam[]): 
       query.greaterThanOrEqualTo(param.greaterThanOrEqualTo.key, param.greaterThanOrEqualTo.value);
     } else if ('lessThanOrEqualTo' in param) {
       query.lessThanOrEqualTo(param.lessThanOrEqualTo.key, param.lessThanOrEqualTo.value);
+    } else if ('matchesQuery' in param) {
+      const inner = newQuery(param.matchesQuery.className);
+      applyParams(inner, param.matchesQuery.params);
+      query.matchesQuery(param.matchesQuery.key, inner);
     }
   }
 }

@@ -8,12 +8,19 @@ import type { SwitchUser } from '@/types/user';
  * back, two call sites that would otherwise each grow their own slightly different
  * version of the same ladder.
  *
+ * `admin` is a role on the account itself, and always has the console. `staff` is a staff
+ * account an admin has given Ops access on /access (`opsAccess`) — switch-finance's
+ * `financeAccess`, for this console. A staff account without that grant gets `null`, the
+ * same answer as a customer.
+ *
  * **This is not the security boundary.** Sign-in goes through the `loginStaff` cloud
- * function, which authorizes server-side and refuses to mint a session for a
- * non-staff account (switch-dashboard/src/pages/Login/Login.jsx does the same). What
- * this rule adds is (a) the role label the shell shows, and (b) a re-check on every
- * page load, so an account demoted in the Parse dashboard stops seeing the console on
- * its next navigation instead of at session expiry.
+ * function, which refuses to mint a session for an account outside the Staff role
+ * (switch-dashboard/src/pages/Login/Login.jsx does the same) — but that role is shared
+ * with the staff dashboard, so a staff account without Ops access still gets a session.
+ * What this rule adds is (a) the grant, (b) the role label the shell shows, and (c) a
+ * re-check on every page load, so a revoked grant or a demotion takes effect on the next
+ * navigation instead of at session expiry. Who may write `opsAccess` is the server's
+ * half — docs/ops-access-backend.md.
  */
 export type StaffRole = 'admin' | 'staff' | null;
 
@@ -36,7 +43,7 @@ export const STAFF_TYPES: readonly string[] = [ADMIN_STAFF_TYPE, 'Staff'];
 export const STAFF_APP_TYPES: readonly string[] = ['staff', 'admin'];
 
 /** Just the fields the rule reads — so callers can pass a full row or a projection. */
-export type AccessFields = Pick<SwitchUser, 'staffType' | 'appType' | 'enabled' | 'city'>;
+export type AccessFields = Pick<SwitchUser, 'staffType' | 'appType' | 'opsAccess' | 'enabled' | 'city'>;
 
 /**
  * Whether the account is staff at all. Both halves are required:
@@ -65,16 +72,34 @@ export function isStaffAccount(user: AccessFields | null | undefined): boolean {
  *    written is not a disabled account, and treating `undefined` as "disabled" would
  *    lock out every account older than the field.
  * 2. Not staff → denied, admins included.
- * 3. `staffType === 'Admin'` → admin, otherwise staff. Compared case-insensitively:
- *    this vocabulary lives in the Parse dashboard where a human types it.
+ * 3. `staffType === 'Admin'` → admin, whatever `opsAccess` says. Compared
+ *    case-insensitively: this vocabulary lives in the Parse dashboard where a human types it.
+ * 4. `opsAccess === true` → staff. `=== true` because the field is new: a row that never
+ *    had it written was never granted.
+ * 5. Otherwise no access.
  */
 export function staffRole(user: AccessFields | null | undefined): StaffRole {
   if (!user) return null;
   if (user.enabled === false) return null;
   if (!isStaffAccount(user)) return null;
-  return user.staffType?.trim().toLowerCase() === ADMIN_STAFF_TYPE.toLowerCase()
-    ? 'admin'
-    : 'staff';
+  if (isAdminStaffType(user.staffType)) return 'admin';
+  return user.opsAccess === true ? 'staff' : null;
+}
+
+export function isAdminStaffType(staffType: string | undefined): boolean {
+  return staffType?.trim().toLowerCase() === ADMIN_STAFF_TYPE.toLowerCase();
+}
+
+/**
+ * Where a staff account stands on /access — what an admin sees and can change, not whether
+ * the account can sign in today: a deactivated account keeps its grant for when it is
+ * switched back on, and its row says both.
+ */
+export type OpsGrant = 'admin' | 'granted' | 'none';
+
+export function opsGrantOf(user: Pick<SwitchUser, 'staffType' | 'opsAccess'>): OpsGrant {
+  if (isAdminStaffType(user.staffType)) return 'admin';
+  return user.opsAccess === true ? 'granted' : 'none';
 }
 
 export function canAccessOps(user: AccessFields | null | undefined): boolean {

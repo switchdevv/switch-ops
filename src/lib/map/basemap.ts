@@ -13,8 +13,9 @@ import type { LatLng, OrderPhase, RouteLeg } from '@/lib/ops/dispatch';
 /**
  * Everything the live map knows about its base layer, in one place.
  *
- * Imports MapLibre at runtime, so only the map component (itself loaded client-side
- * only — see components/dispatch/dispatch-screen.tsx) may import this module.
+ * Imports MapLibre at runtime, so only the map components (each loaded client-side only —
+ * see components/dispatch/dispatch-screen.tsx and components/restaurants/restaurant-form.tsx)
+ * may import this module.
  */
 
 export type MapTheme = 'light' | 'dark';

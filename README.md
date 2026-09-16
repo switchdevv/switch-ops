@@ -29,6 +29,15 @@ site in project `switch-proj`. The site must exist first:
   pipeline, filters and a detail per row.
 - **Live map** (`/map`) — the dispatch screen: every open order, its restaurant, its
   customer and every driver on one map, with the panel that assigns them.
+- **Drivers** (`/drivers`) — the fleet: add a driver, edit their profile, activate or
+  deactivate them, reset a password, send them a message, and see a driver's deliveries and
+  cash balance for a period.
+- **Support** (`/support`) — the inbox for messages sent from the customer, driver and
+  restaurant apps: read them with the sender's region, apps, recent orders and earlier
+  messages beside them, then call, email, reply by push notification or delete.
+- **Access** (`/access`, admins only) — which staff accounts may use the console. Admins
+  always can; everyone else needs an admin to switch their access on. Needs the
+  `setOpsAccess` cloud function on the server first — see `docs/ops-access-backend.md`.
 
 Everything reads the shared Parse backend from the browser; see `AGENTS.md` for the
 constraints that follow from that.

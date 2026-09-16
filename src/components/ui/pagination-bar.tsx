@@ -22,10 +22,14 @@ export function PaginationBar({
 
   const items = paginationRange(page, totalPages);
 
+  // Sized by the list it sits under, not the window: the support inbox puts a list in a
+  // 26rem column on a wide screen, where a window breakpoint would still spell out Previous
+  // and Next and push Next out of the card. Narrower than `@sm`, the neighbouring pages go
+  // too — first, current and last are enough to know where you are.
   return (
     <nav
       aria-label={t('orders.pager.label')}
-      className="border-separator/70 bg-surface-secondary/40 flex items-center justify-between gap-2 border-t px-4 py-3"
+      className="border-separator/70 bg-surface-secondary/40 @container flex items-center justify-between gap-2 border-t px-4 py-3"
     >
       <PagerButton
         isDisabled={page <= 1 || isFetching}
@@ -33,13 +37,13 @@ export function PaginationBar({
         aria-label={t('orders.pager.previous')}
       >
         <ChevronLeftIcon className="size-4" />
-        <span className="hidden sm:inline">{t('orders.pager.previous')}</span>
+        <span className="hidden @xl:inline">{t('orders.pager.previous')}</span>
       </PagerButton>
 
-      <div className="flex items-center gap-1">
+      <div className="flex min-w-0 items-center gap-1">
         {items.map((item, index) =>
           item === ELLIPSIS ? (
-            <span key={`ellipsis-${index}`} className="text-muted grid size-9 place-items-center">
+            <span key={`ellipsis-${index}`} className="text-muted grid h-9 w-5 place-items-center">
               …
             </span>
           ) : (
@@ -51,7 +55,8 @@ export function PaginationBar({
               disabled={isFetching}
               onClick={() => onChange(item)}
               className={
-                'text-body tabular focus-visible:ring-focus grid size-9 place-items-center rounded-xl transition-colors outline-none focus-visible:ring-2 disabled:opacity-50 ' +
+                'text-body tabular focus-visible:ring-focus h-9 min-w-9 place-items-center rounded-xl px-1.5 transition-colors outline-none focus-visible:ring-2 disabled:opacity-50 ' +
+                (item !== page && item !== 1 && item !== totalPages ? 'hidden @sm:grid ' : 'grid ') +
                 (item === page
                   ? 'bg-accent text-accent-foreground font-bold'
                   : 'text-muted hover:bg-surface-tertiary hover:text-foreground')
@@ -68,7 +73,7 @@ export function PaginationBar({
         onPress={() => onChange(page + 1)}
         aria-label={t('orders.pager.next')}
       >
-        <span className="hidden sm:inline">{t('orders.pager.next')}</span>
+        <span className="hidden @xl:inline">{t('orders.pager.next')}</span>
         <ChevronRightIcon className="size-4" />
       </PagerButton>
     </nav>

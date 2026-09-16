@@ -240,6 +240,30 @@ export async function settleQueueAfterUnassign(orderId: string): Promise<void> {
   );
 }
 
+/**
+ * Brings the queue in line with ops deactivating a driver.
+ *
+ * A deactivated account is one `assignDriver` refuses (`beforeLogin` and the assign both
+ * check `enabled`), so every order still waiting behind that driver would sit in their
+ * line being refused until somebody noticed. They go back to needing a driver instead,
+ * which is where the manual-dispatch rule puts them: ops choose again.
+ *
+ * A sent row that hasn't been accepted goes too: left alone it would hold the order as
+ * "sent to them, not accepted yet" for the rest of its offer window, an order nobody may
+ * now carry. A row a console is sending this second is left to that send.
+ */
+export async function settleQueueAfterDriverDisabled(driverId: string): Promise<void> {
+  const rows = await find<QueueEntry>(QUEUE, [
+    { equalTo: { key: 'driver', value: pointer('_User', driverId) } },
+    { containedIn: { key: 'state', value: READ_STATES } },
+    { limit: 1000 },
+  ]);
+  const now = Date.now();
+  await Promise.all(
+    rows.filter((row) => !isBeingSent(row, now)).map((row) => markDropped(row, 'driverDisabled')),
+  );
+}
+
 /* ---- what the runner does ----------------------------------------------------- */
 
 /**

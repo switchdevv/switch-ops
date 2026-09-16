@@ -19,6 +19,16 @@ switch-food / switch-driver / switch-manager, switch-dashboard and switch-financ
 - **Auth is the `loginStaff` cloud function**, not `Parse.User.logIn`. It authorizes staff
   server-side and hands back a session token that `Parse.User.become` adopts. See
   `src/hooks/use-session.ts`.
+- **Only admins and granted staff get in** — switch-finance's access model, for this
+  console. `loginStaff` admits anyone in the Staff role (it's shared with switch-dashboard),
+  so the gate re-reads the account's row on every page load: an `Admin` `staffType` always
+  gets in; a `Staff` one only with `opsAccess === true`; anyone else sees "can't use Switch
+  Ops". Admins grant and revoke on **`/access`** (admin-only page and nav item; admins' rows
+  have no switch), which calls **`setOpsAccess`** — a cloud function that is **not on the
+  server yet**, specified with its `beforeSave` guard in `docs/ops-access-backend.md`. Until
+  it ships, every switch fails with "not enabled on the server yet", and deploying the
+  console locks out every non-admin staff account unless `opsAccess` is set by hand in the
+  Parse Dashboard first. Rule in `lib/auth/access.ts`, I/O in `lib/services/staff.ts`.
 - **Every user-facing string goes through `t()`** (`src/lib/i18n`). English and French
   dictionaries are structurally identical types — adding a key to one is a type error
   until it exists in the other.
@@ -64,9 +74,98 @@ switch-food / switch-driver / switch-manager, switch-dashboard and switch-financ
   an order in a line**: a row is sent at most once, a row whose driver took the order is
   closed (`accepted`), and a manual assign takes the order out of every line — so a
   driver who cancels hands the order back to ops as needing a driver, never to a queue.
-- **The live map is client-only.** MapLibre touches `window` on import, so
-  `components/dispatch/dispatch-map.tsx` is loaded with `next/dynamic` + `ssr: false` and
-  is the only module allowed to import `lib/map/basemap.ts`. Pins are DOM markers rendered
+- **Ops manage the catalogue** — restaurants (`/restaurants`), their menus (the `List`
+  class, the dashboard's "Lists") and products (`Food`), plus a restaurant's manager and a
+  read-only reviews list: switch-dashboard's Stores / Lists / Products / Reviews pages,
+  without the finance side. Writes follow the dashboard exactly — a plain save for a
+  restaurant's own columns and for Pause (`active`), and the cloud functions for the rest
+  (`toggleEnableStores`, `assignManager`, `changeRegion`, `assignStoreFile`, `deleteStores`,
+  `editList` / `assignList` / `deletelists`, `editProduct` / `assignProduct` /
+  `deleteProducts` / `duplicateProduct`). What differs, on purpose: an edit writes only the
+  columns that changed (the manager app edits the same rows); enabling/disabling re-reads
+  the row first, because `toggleEnableStores` flips rather than sets; deleting a menu or a
+  restaurant also deletes its products, which neither function does; a manager is looked
+  up before being assigned, and an account that already runs another restaurant is
+  refused; close must be after open. `Restaurant.fee` is the commission switch-finance
+  bills on, so it is **admin-only** here (a staff-created restaurant starts at
+  `DEFAULT_COMMISSION_RATE`, 0, and admins see "No commission"), and so is **deleting a
+  restaurant**. Every page is paginated with its filters in the URL, and a staff account
+  only sees its own region — the list is pinned where the URL is read, and a restaurant,
+  menu or product in another region answers as not found (`CatalogueGate`). **Duplicating
+  a menu or a restaurant** has no cloud function (only `duplicateProduct` exists), so it is
+  built from plain saves in `lib/services/duplicate.ts`: pictures are downloaded from the
+  storage CDN and uploaded as new files (never shared — deleting a dish deletes its file;
+  a picture the CDN won't serve to the browser is skipped and counted), rows are created
+  oldest first to keep the customer app's order, a restaurant copy starts disabled with no
+  manager, and a copy that fails part-way is kept and linked rather than rolled back. Rules in
+  `lib/ops/restaurant-form.ts` and `lib/ops/product-form.ts`, I/O in
+  `lib/services/{restaurants,menus,products,reviews}.ts`.
+- **Ops manage drivers** (`/drivers`) — switch-dashboard's Users page filtered to the driver
+  app. A driver is a `_User` whose `appType` holds 'driver'. Writes go only through the cloud
+  functions (`addUser`, `editUser`, `toggleEnableUsers`, `sendPush`), because a `_User` row
+  is owner-only to a Staff session. **Active means `enabled === true`**: `beforeLogin` and
+  `assignDriver` both refuse without it; `driverActive` is only the driver's own GO switch.
+  `toggleEnableUsers` *flips*, so the row is re-read and the call refused unless it is still
+  in the state ops saw (`DRIVER_STATE_CHANGED`). Deactivating drops that driver's
+  `DispatchQueue` rows (`driverDisabled`) so their orders need a driver again, and the map's
+  online-drivers query filters on `enabled` so a deactivated driver who taps GO can't show as
+  available. It does **not** sign them out — a password reset through `editUser` is the only
+  sign-out (Parse revokes every session on a password change). Staff and admin accounts (a
+  `staffType`, or `appType` staff/admin) are refused by every write, because `editUser`
+  always writes `staffType` and would strip it. `editUser` is sent the fresh row's `appType`
+  (a driver who is also a customer keeps 'food'), and `email` only comes from `getUsers` —
+  Parse hides it from a session read — narrowed to the form's fields before it reaches the
+  cache. **None of these functions check region or admin**, so a staff account is confined
+  here, before each call, and a driver outside its region answers as not found. The list
+  reads the whole fleet in scope (up to 1000) and searches, counts and pages in the browser;
+  "delivering" and "queued" come from the map's own open-orders and queue reads. A driver's
+  cash balance is the dashboard's per-driver formula, counted from status 2. Rules in
+  `lib/ops/{drivers,driver-form,driver-settlement}.ts`, I/O in `lib/services/drivers.ts`.
+- **Ops manage customers** (`/customers`) — switch-dashboard's Users page for the customer
+  app: a `_User` whose `appType` holds 'food'. The list pages on the server (search by name,
+  phone, username, id; region, status, sort in the URL). `_User`'s protectedFields hide
+  `email`, `cartFood`, `promosUsed` and `favorites` from a session read, so the detail page
+  and every form read the account through `getUsers` (master key), narrowed at the boundary
+  (arrays to counts, `authData` to provider names), and an **email search goes through
+  `getUsers` too**. The page shows profile, cart / promo / favourite counts, order tallies,
+  saved addresses and the order history as the board's own expandable rows. Writes are
+  `addUser` / `editUser` / `toggleEnableUsers` / `deleteUsers`, guarded here because none
+  checks region or role: staff never see or touch a staff-tagged account (admins may, and
+  `editUser` is sent the fresh row's `appType` **and** `staffType` so neither is stripped);
+  nobody changes their own account; toggle re-reads first (it flips); **delete is
+  admin-only and refused for an account with `managerStore`** — `deleteUsers` would delete
+  the restaurant, and `toggleEnableUsers` cascades to it (the dialog names it). A password
+  reset is the only sign-out. Rules in `lib/ops/{customers,customer-form}.ts` (phone/email
+  rules imported from `driver-form.ts`), I/O in `lib/services/customers.ts`.
+- **Ops manage restaurant managers** (`/managers`) — built like Drivers (whole list in scope
+  read at once, searched/counted/paged in the browser, staff pinned to their region, staff
+  and admin accounts refused, form and password rules from `driver-form.ts`). A manager is a
+  `_User` whose `appType` holds 'manager'; the manager app only opens with a phone **and** a
+  `managerStore`, so status is running / no restaurant / deactivated. Restaurant links are
+  `assignManager` only: Assign is offered to an account with no `managerStore` (whoever
+  managed that restaurant loses it — the dialog names them); Remove (no `managerId`) also
+  takes 'manager' out of `appType`, so the account leaves the list, and is refused unless the
+  restaurant still names this account — on a restaurant that moved on it would unlink the
+  *other* manager. **`toggleEnableUsers` on a manager also sets their restaurant's and every
+  dish's `enabled`** (not the menus'), so both confirm dialogs say so. Rules in
+  `lib/ops/managers.ts`, I/O in `lib/services/managers.ts`.
+- **Ops answer support** (`/support`) — switch-dashboard's Support page as an inbox: the
+  `Message` rows the Support screens of switch-food, switch-driver and switch-manager save.
+  A row is `user`, `fullname`, `email`, `phone`, `message` and nothing else — no region, no
+  status — and its ACL is the author's (plus public read), so a Staff session can read or
+  delete it and **never update it**. Hence: a message's region is its **sender's `city`**
+  (matched through `user` with `matchesQuery`, the same rule the server's `afterSave` uses to
+  notify staff), and **read/unread is per account, per browser** in localStorage
+  (`hooks/use-support-read-marks.ts`) — the screen says so. Delete is `deleteMessages`; reply
+  is `sendPush` to the sender's account with the app ops pick (a message doesn't record which
+  app it came from). Neither function checks region, so the message is re-read inside the
+  staff account's region before each. Account-deletion requests are recognised by the text
+  switch-food's Settings prefills. The included `_User` is narrowed at the boundary. Rules in
+  `lib/ops/support.ts`, I/O in `lib/services/support.ts`.
+- **The maps are client-only.** MapLibre touches `window` on import, so
+  `components/dispatch/dispatch-map.tsx` and the restaurant form's
+  `components/restaurants/location-map.tsx` are loaded with `next/dynamic` + `ssr: false`,
+  and they are the only modules allowed to import `lib/map/basemap.ts`. Pins are DOM markers rendered
   through React portals, which is why they can use the palette tokens directly.
   MapLibre's own stylesheet is unlayered, so overrides for it in `globals.css` must stay
   outside every `@layer` (and beat it on specificity) to apply at all.

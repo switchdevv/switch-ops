@@ -324,6 +324,13 @@
     color: var(--accent-soft-foreground);
   }
 
+  /* Every search field draws its own clear button, which also resets the list; the
+     browser's would sit beside it and only empty the text. */
+  input[type='search']::-webkit-search-cancel-button,
+  input[type='search']::-webkit-search-decoration {
+    appearance: none;
+  }
+
   /* Numeric columns line up only if the digits share an advance width. */
   .tabular {
     font-variant-numeric: tabular-nums;
@@ -428,6 +435,45 @@
 .dark .ops-map .maplibregl-ctrl-attrib-button,
 [data-theme='dark'] .ops-map .maplibregl-ctrl-attrib-button {
   filter: invert(1);
+}
+
+/* The restaurant form's draggable pin (components/restaurants/location-map.tsx): a
+   rounded square turned 45° so one corner points down, anchored at the element's bottom.
+   Plain CSS rather than a portal-rendered pin — it carries no state, and MapLibre's drag
+   handling wants the element it was given. */
+.ops-map .ops-location-pin {
+  width: 30px;
+  height: 36px;
+  cursor: grab;
+}
+
+.ops-map .ops-location-pin:active {
+  cursor: grabbing;
+}
+
+.ops-map .ops-location-pin::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--surface);
+  border-radius: 50% 50% 50% 0;
+  background-color: var(--accent);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.3);
+  transform: rotate(-45deg);
+}
+
+.ops-map .ops-location-pin::after {
+  content: '';
+  position: absolute;
+  top: 11px;
+  left: 12px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background-color: var(--surface);
 }
 
 @media (prefers-reduced-motion: reduce) {

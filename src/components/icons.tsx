@@ -185,6 +185,17 @@ export function UserIcon(props: IconProps) {
   );
 }
 
+/** A person with a tie — a restaurant's manager, as opposed to a customer. */
+export function ManagerIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="7.5" r="3.5" />
+      <path d="M4.5 20.5a7.5 7.5 0 0 1 15 0" />
+      <path d="m12 13.5-1 2.25 1 3.25 1-3.25-1-2.25Z" />
+    </Icon>
+  );
+}
+
 export function BikeIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -428,6 +439,132 @@ export function ExternalLinkIcon(props: IconProps) {
       <path d="M14 4.5h5.5V10" />
       <path d="M19.5 4.5 11 13" />
       <path d="M18.5 14.5v4A1.5 1.5 0 0 1 17 20H5.5A1.5 1.5 0 0 1 4 18.5V7A1.5 1.5 0 0 1 5.5 5.5h4" />
+    </Icon>
+  );
+}
+
+/* ---- catalogue ---------------------------------------------------------- */
+
+/** A row's other actions, behind one button. */
+export function MoreIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="5.5" cy="12" r="1.2" />
+      <circle cx="12" cy="12" r="1.2" />
+      <circle cx="18.5" cy="12" r="1.2" />
+    </Icon>
+  );
+}
+
+export function PencilIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4.5 19.5h4l10-10a2.83 2.83 0 0 0-4-4l-10 10v4Z" />
+      <path d="m13.5 6.5 4 4" />
+    </Icon>
+  );
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4.5 7h15M9.5 7V5a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 14.5 5v2" />
+      <path d="M6.5 7 7.4 19a1.5 1.5 0 0 0 1.5 1.5h6.2a1.5 1.5 0 0 0 1.5-1.5l.9-12M10.5 11v5.5M13.5 11v5.5" />
+    </Icon>
+  );
+}
+
+export function PauseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="6.5" y="5" width="3.5" height="14" rx="1" />
+      <rect x="14" y="5" width="3.5" height="14" rx="1" />
+    </Icon>
+  );
+}
+
+export function PlayIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7.5 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8a.8.8 0 0 0-1.2.7Z" />
+    </Icon>
+  );
+}
+
+/** On the platform, or taken off it — a restaurant's, a menu's or a dish's `enabled`. */
+export function PowerIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3.5v8" />
+      <path d="M7 6.3a7.5 7.5 0 1 0 10 0" />
+    </Icon>
+  );
+}
+
+export function StarIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m12 4 2.47 5 5.53.8-4 3.9.94 5.5L12 16.6l-4.94 2.6.94-5.5-4-3.9 5.53-.8L12 4Z" />
+    </Icon>
+  );
+}
+
+export function ImageIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+      <circle cx="9" cy="10" r="1.6" />
+      <path d="m20.5 15.5-4.5-4.5L6 19.5" />
+    </Icon>
+  );
+}
+
+/** A restaurant's menu — a section of dishes. */
+export function MenuBookIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 6.5c-1.8-1.3-4.3-2-7.5-2v13c3.2 0 5.7.7 7.5 2 1.8-1.3 4.3-2 7.5-2v-13c-3.2 0-5.7.7-7.5 2Z" />
+      <path d="M12 6.5v13" />
+    </Icon>
+  );
+}
+
+/** A password — reset from the Drivers screen. */
+export function KeyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="15.5" r="4" />
+      <path d="m10.85 12.65 8.4-8.4M16.5 7l2.5 2.5M14 9.5l2 2" />
+    </Icon>
+  );
+}
+
+/** A message sent to someone's phone, as a push. Not `MailIcon`: nothing is emailed. */
+export function SendIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20.5 3.5 10 14" />
+      <path d="m20.5 3.5-6.5 17-4-6.5-6.5-4Z" />
+    </Icon>
+  );
+}
+
+/** A conversation — the support inbox. */
+export function ChatIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20.5 11.5a7.5 7.5 0 0 1-10.9 6.7L4.5 19.5l1.3-4.3A7.5 7.5 0 1 1 20.5 11.5Z" />
+      <path d="M9 10.5h6M9 13.5h3.5" />
+    </Icon>
+  );
+}
+
+/** A shield with a tick — who may use the console (/access). switch-finance's glyph. */
+export function ShieldIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3 5 6v5.5c0 4.2 2.9 7.6 7 9.5 4.1-1.9 7-5.3 7-9.5V6l-7-3Z" />
+      <path d="m9.25 12 2 2 3.5-3.75" />
     </Icon>
   );
 }

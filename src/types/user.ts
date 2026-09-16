@@ -20,6 +20,9 @@ export type SwitchUser = ParseObjectJSON & {
   /** The staff role, when the account has one: 'Admin' or 'Staff'. Typed by hand in the
    * Parse dashboard — see lib/auth/access.ts. */
   staffType?: string;
+  /** Access to this console, granted by an admin on /access. Only the `setOpsAccess`
+   * cloud function writes it — see docs/ops-access-backend.md. Admins don't need it. */
+  opsAccess?: boolean;
   /** The platform's own account switch, set to `true` at signup by every RN app. `false`
    * means the account is shut off entirely. */
   enabled?: boolean;

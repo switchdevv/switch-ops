@@ -36,6 +36,9 @@ export type DropReason =
   | 'assignedElsewhere'
   /** Ops took the driver off the order: it needs a driver again, not a line. */
   | 'unassigned'
+  /** Ops deactivated the driver, so nothing may be sent to them: the orders behind them
+   * go back to needing a driver. */
+  | 'driverDisabled'
   | 'duplicate'
   | 'notDelivery'
   | 'missing';

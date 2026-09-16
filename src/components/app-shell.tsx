@@ -3,12 +3,22 @@
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAccess } from '@/hooks/use-access';
 import type { MessageKey } from '@/lib/i18n/dictionary';
 import { useI18n } from '@/lib/i18n/provider';
 import { AccountMenu } from './account-menu';
 import { BrandMark } from './brand-mark';
 import { LanguageToggle } from './language-toggle';
-import { ListIcon, MapIcon } from './icons';
+import {
+  BikeIcon,
+  ChatIcon,
+  ListIcon,
+  ManagerIcon,
+  MapIcon,
+  ShieldIcon,
+  StoreIcon,
+  UserIcon,
+} from './icons';
 import { ThemeToggle } from './theme-toggle';
 
 type NavItem = {
@@ -21,11 +31,20 @@ type NavItem = {
    * own panel already does the job the page margins do elsewhere.
    */
   isFullBleed?: boolean;
+  /** Hidden from staff. A courtesy, not a check — RequireAdmin on the page is what refuses
+   * a staff account that types the URL. */
+  adminOnly?: true;
 };
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/orders', labelKey: 'nav.orders', icon: ListIcon },
   { href: '/map', labelKey: 'nav.map', icon: MapIcon, isFullBleed: true },
+  { href: '/drivers', labelKey: 'nav.drivers', icon: BikeIcon },
+  { href: '/restaurants', labelKey: 'nav.restaurants', icon: StoreIcon },
+  { href: '/managers', labelKey: 'nav.managers', icon: ManagerIcon },
+  { href: '/customers', labelKey: 'nav.customers', icon: UserIcon },
+  { href: '/support', labelKey: 'nav.support', icon: ChatIcon },
+  { href: '/access', labelKey: 'nav.access', icon: ShieldIcon, adminOnly: true },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -35,8 +54,12 @@ function isActive(pathname: string, href: string) {
 export function AppShell({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const pathname = usePathname();
+  const { role } = useAccess();
 
-  const current = NAV_ITEMS.find((item) => isActive(pathname, item.href));
+  // Filtered once and handed to every nav (the title, the pills, the sidebar), so a new
+  // consumer can't quietly render the full list.
+  const items = NAV_ITEMS.filter((item) => !item.adminOnly || role === 'admin');
+  const current = items.find((item) => isActive(pathname, item.href));
   const isFullBleed = current?.isFullBleed ?? false;
 
   return (
@@ -44,7 +67,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     // the leftover height to `main`, which is what lets a map fill it and its own panel
     // scroll inside instead of the window doing it.
     <div className={isFullBleed ? 'flex h-dvh overflow-hidden' : 'flex min-h-dvh'}>
-      <Sidebar pathname={pathname} />
+      <Sidebar items={items} pathname={pathname} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Sticky + translucent so content scrolls under the bar rather than being cut
@@ -74,7 +97,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {/* The sidebar is desktop-only, so the same destinations ride along under the
               header as a scrollable pill row on narrow screens. */}
           <nav className="flex gap-2 overflow-x-auto px-5 pb-3 lg:hidden">
-            {NAV_ITEMS.map((item) => {
+            {items.map((item) => {
               const active = isActive(pathname, item.href);
               return (
                 <Link
@@ -110,7 +133,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function Sidebar({ pathname }: { pathname: string }) {
+function Sidebar({ items, pathname }: { items: NavItem[]; pathname: string }) {
   const { t } = useI18n();
 
   return (
@@ -130,7 +153,7 @@ function Sidebar({ pathname }: { pathname: string }) {
       </span>
 
       <nav className="flex flex-col gap-1">
-        {NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const active = isActive(pathname, item.href);
           return (
             <Link

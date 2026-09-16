@@ -900,7 +900,15 @@ function digits(value: string | undefined | null): string {
   return (value ?? '').replace(/\D+/g, '');
 }
 
-function matches(query: string, fields: (string | undefined | null)[], phones: (string | undefined | null)[]) {
+/**
+ * Whether a row answers to what someone typed: any of `fields` containing the text
+ * (accents and case ignored), or any of `phones` containing the digits.
+ *
+ * Exported for the Drivers screen, which searches the fleet the same way this panel
+ * searches the map — one rule for "does this person match", so a driver found here is
+ * found there.
+ */
+export function matches(query: string, fields: (string | undefined | null)[], phones: (string | undefined | null)[]) {
   const text = normalizeForSearch(query);
   if (!text) return true;
   if (fields.some((field) => normalizeForSearch(field).includes(text))) return true;

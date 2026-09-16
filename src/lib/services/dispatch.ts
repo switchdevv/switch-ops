@@ -89,12 +89,18 @@ const DRIVER_FIELDS = ['fullname', 'username', 'phone', 'driverLocation', 'drive
  * Drivers carrying an order usually have the switch off (the driver app flips it when it
  * accepts), so they are not in this list; the orders they carry bring them in instead.
  * See `buildDispatchModel`.
+ *
+ * The third constraint is the account itself. Deactivating a driver doesn't sign them out
+ * (`toggleEnableUsers` only writes the row), so their app can tap GO again and keep
+ * writing positions — they would sit on this map as *available* while `assignDriver`
+ * refuses every attempt to send them anything.
  */
 export function listOnlineDrivers(region: string): Promise<DriverParty[]> {
   const since = new Date(Date.now() - DRIVER_ONLINE_WINDOW_MS);
 
   return find<DriverParty>(USER, [
     { equalTo: { key: 'driverActive', value: true } },
+    { equalTo: { key: 'enabled', value: true } },
     { greaterThan: { key: 'updatedAt', value: since } },
     region ? { equalTo: { key: 'city', value: pointer('City', region) } } : {},
     { select: DRIVER_FIELDS },
