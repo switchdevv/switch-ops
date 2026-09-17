@@ -23,6 +23,7 @@ export function SelectField({
   options,
   onChange,
   isDisabled,
+  isLabelHidden,
   className,
 }: {
   label: string;
@@ -30,6 +31,9 @@ export function SelectField({
   options: readonly SelectOption[];
   onChange: (value: string) => void;
   isDisabled?: boolean;
+  /** Kept for screen readers only, where the chosen option already says what the
+   * control is — "All regions" needs no "Region" above it. */
+  isLabelHidden?: boolean;
   className?: string;
 }) {
   const id = useId();
@@ -38,7 +42,7 @@ export function SelectField({
     <div className={`flex min-w-0 flex-col gap-1 ${className ?? ''}`}>
       <label
         htmlFor={id}
-        className="text-micro text-muted font-bold tracking-[0.1em] uppercase"
+        className={isLabelHidden ? 'sr-only' : 'text-micro text-muted font-bold tracking-[0.1em] uppercase'}
       >
         {label}
       </label>

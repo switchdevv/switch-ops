@@ -86,17 +86,10 @@ export function OrderQueue({
     );
   }
 
+  // "Every accepted delivery has a driver" used to head this list. It is the tick on the
+  // panel's "Need a driver" number now, which is visible from every tab and costs no row.
   return (
     <div className="flex flex-col">
-      {/* Said out loud, once, when it is true: the queue's whole purpose is this number
-          being zero, and a dispatcher should be able to see that at a glance rather than
-          infer it from a section that isn't there. */}
-      {model.counts.needsDriver === 0 && !query && (
-        <p className="text-caption text-success-soft-foreground bg-success-soft/60 border-separator/70 border-b px-3 py-2 font-bold">
-          {t('dispatch.queue.allAssigned')}
-        </p>
-      )}
-
       {ORDER_PHASES.map((phase) => {
         const rows = orders.filter((order) => order.phase === phase);
         if (rows.length === 0) return null;

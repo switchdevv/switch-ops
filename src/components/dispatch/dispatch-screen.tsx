@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { useAccess } from '@/hooks/use-access';
 import { useCities } from '@/hooks/use-cities';
 import { useAssignDriver, useOngoingOrders, useOnlineDrivers, type DispatchRequest } from '@/hooks/use-dispatch';
+import { useElementHeight } from '@/hooks/use-element-height';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { useNow } from '@/hooks/use-now';
 import { useDispatchQueue, useMoveUp, useQueueOrder, useRemoveFromQueue, useRetryQueued } from '@/hooks/use-queue';
@@ -21,20 +22,22 @@ import {
 } from '@/lib/ops/dispatch';
 import { parseErrorKey } from '@/lib/parse/errors';
 import { parseDispatchParams, serializeDispatchParams } from '@/lib/url/dispatch-params';
-import type { SelectOption } from '@/components/ui/select-field';
-import { ChevronUpIcon } from '@/components/icons';
+import { PageToolbar } from '@/components/page-toolbar';
+import { LiveControl } from '@/components/ui/live-control';
+import { SelectField, type SelectOption } from '@/components/ui/select-field';
 import type { DispatchFeedback } from './dispatch-action-bar';
 import type { QueueActions } from './dispatch-detail';
 import { DispatchPanel } from './dispatch-panel';
 import type { QueueHandlers } from './dispatch-queue';
+import { DispatchSheet, sheetHeights, type SheetSnap } from './dispatch-sheet';
 
 /**
  * The live map: where every open order, its restaurant, its customer and every driver
  * are right now, and where ops assigns the drivers.
  *
  * This component owns the state the two halves share — what is selected, what is being
- * pointed at, which region, whether it is live — and nothing else. The map draws, the
- * panel decides, and neither knows how the other works.
+ * pointed at, which region, whether it is live, how far the phone's sheet is open — and
+ * nothing else. The map draws, the panel decides, and neither knows how the other works.
  */
 
 /** Loaded in the browser only. MapLibre reaches for `window` on import, and this app is
@@ -48,9 +51,10 @@ const DispatchMap = dynamic(() => import('./dispatch-map'), {
  * phone the sheet — so that a framed order lands where it can be seen. */
 const WIDE_PADDING = { top: 60, right: 76, bottom: 44, left: 252 };
 const NARROW_PADDING = { top: 64, right: 24, left: 24 };
-
-const SHEET_PEEK = '13rem';
-const SHEET_OPEN = '74dvh';
+/** Clearance above the sheet's edge, and what is assumed for the sheet before it has
+ * been measured. */
+const SHEET_CLEARANCE = 16;
+const UNMEASURED_SHEET = 240;
 
 export function DispatchScreen() {
   const { t, locale } = useI18n();
@@ -79,10 +83,21 @@ export function DispatchScreen() {
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [pending, setPending] = useState<DispatchRequest | null>(null);
   const [feedback, setFeedback] = useState<DispatchFeedback | null>(null);
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
+  // Half open to start: the list and the map both in view is the screen's point, and the
+  // other two stops are one flick away.
+  const [sheetSnap, setSheetSnap] = useState<SheetSnap>('half');
 
   const now = useNow(15_000);
   const isWide = useMediaQuery('(min-width: 1024px)');
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
+  const rootHeight = useElementHeight(rootRef, !isWide);
+  const summaryHeight = useElementHeight(summaryRef, !isWide);
+  const heights = useMemo(
+    () => (rootHeight > 0 && summaryHeight > 0 ? sheetHeights(rootHeight, summaryHeight) : null),
+    [rootHeight, summaryHeight],
+  );
 
   const ordersQuery = useOngoingOrders(region, isLive);
   const driversQuery = useOnlineDrivers(region, isLive);
@@ -117,6 +132,12 @@ export function DispatchScreen() {
     [pathname, router],
   );
 
+  /** A sheet folded down to its numbers opens far enough to show what was asked for; one
+   * the dispatcher already opened stays where they left it. */
+  const revealSheet = useCallback(() => {
+    setSheetSnap((snap) => (snap === 'peek' ? 'half' : snap));
+  }, []);
+
   /** Selecting anything abandons a confirmation in progress: the strip names an order and
    * a driver, and leaving it armed while the panel moves on is how the wrong one gets
    * assigned. */
@@ -124,13 +145,13 @@ export function DispatchScreen() {
     (next: DispatchSelection | null) => {
       setPending(null);
       setFeedback(null);
-      if (next) setIsSheetOpen(true);
+      if (next) revealSheet();
       // The *effective* region, not whatever the URL asked for: a staff account that
       // opened someone else's `?region=` link is looking at their own, and the link they
       // share next should say so.
       navigate(region, next);
     },
-    [navigate, region],
+    [navigate, region, revealSheet],
   );
 
   const handlers: QueueHandlers = useMemo(
@@ -246,46 +267,35 @@ export function DispatchScreen() {
     return regionOutline(city);
   }, [citiesQuery.data, region]);
 
+  /**
+   * How much of the map's foot the sheet covers once it has settled. Capped at half open:
+   * a full sheet hides the map altogether, and what gets framed meanwhile should still be
+   * in view when the dispatcher pulls it back down.
+   */
+  const sheetCover = isWide ? 0 : heights ? Math.min(heights[sheetSnap], heights.half) : UNMEASURED_SHEET;
+
   const padding = useMemo(
-    () =>
-      isWide
-        ? WIDE_PADDING
-        : { ...NARROW_PADDING, bottom: isSheetOpen ? 260 : 190 },
-    [isWide, isSheetOpen],
+    () => (isWide ? WIDE_PADDING : { ...NARROW_PADDING, bottom: sheetCover + SHEET_CLEARANCE }),
+    [isWide, sheetCover],
   );
+
+  const refreshAll = () => {
+    void ordersQuery.refetch();
+    void driversQuery.refetch();
+    void queueQuery.refetch();
+  };
 
   const panel = (
     <DispatchPanel
       model={model}
       isPending={ordersQuery.isPending}
       error={ordersQuery.error}
-      onRetry={() => {
-        void ordersQuery.refetch();
-        void driversQuery.refetch();
-        void queueQuery.refetch();
-      }}
+      onRetry={refreshAll}
       total={ordersQuery.data?.count ?? 0}
       now={now}
       selection={selection}
       handlers={handlers}
       onClearSelection={() => select(null)}
-      live={{
-        isLive,
-        isFetching: ordersQuery.isFetching || driversQuery.isFetching || queueQuery.isFetching,
-        updatedAt: ordersQuery.dataUpdatedAt,
-        onToggle: () => setIsLive((live) => !live),
-        onRefresh: () => {
-          void ordersQuery.refetch();
-          void driversQuery.refetch();
-          void queueQuery.refetch();
-        },
-      }}
-      region={{
-        value: region,
-        options: regionOptions,
-        isLocked: pinnedRegion.length > 0,
-        onChange: (next) => navigate(next, null),
-      }}
       assign={{
         pending,
         isSending: assignMutation.isPending || queueMutation.isPending,
@@ -299,18 +309,52 @@ export function DispatchScreen() {
         onDismiss: () => setFeedback(null),
       }}
       queueActions={queueActions}
+      placement={isWide ? 'side' : 'sheet'}
+      summaryRef={summaryRef}
+      onReveal={isWide ? undefined : revealSheet}
     />
   );
 
   return (
-    <div className="relative flex h-full min-h-0 w-full">
+    <div ref={rootRef} className="relative flex h-full min-h-0 w-full">
+      {/* Up in the shell's header, beside the title on a wide screen and between the logo
+          and the avatar on a phone: both govern the map as much as the panel, and every
+          row they took inside the panel was a row the orders didn't get. */}
+      <PageToolbar>
+        <LiveControl
+          isLive={isLive}
+          onToggle={() => setIsLive((live) => !live)}
+          onRefresh={refreshAll}
+          isFetching={ordersQuery.isFetching || driversQuery.isFetching || queueQuery.isFetching}
+          updatedAt={ordersQuery.dataUpdatedAt}
+          now={now}
+          isCompact
+        />
+        <SelectField
+          label={t('dispatch.region')}
+          isLabelHidden
+          value={region}
+          options={regionOptions}
+          isDisabled={pinnedRegion.length > 0}
+          onChange={(next) => navigate(next, null)}
+          className="flex-1 sm:w-56 sm:flex-none"
+        />
+      </PageToolbar>
+
       {isWide && (
-        <aside className="border-border/70 bg-surface z-10 flex h-full w-[24rem] shrink-0 flex-col border-e">
+        <aside className="border-border/70 bg-surface z-10 flex h-full w-[24rem] shrink-0 flex-col border-e xl:w-[26rem]">
           {panel}
         </aside>
       )}
 
-      <div className="relative min-w-0 flex-1">
+      {/* `isolate`: every pin carries its own z-index so the urgent ones sit on top, and
+          without a stacking context of their own those indexes compete with the sheet's —
+          which is how pins came to be drawn over the panel on a phone. The inset tells the
+          map's own furniture (attribution, the loading card) where the sheet begins. */}
+      <div
+        className="relative isolate min-w-0 flex-1"
+        style={{ '--ops-map-inset-bottom': `${sheetCover}px` } as CSSProperties}
+      >
         {theme ? (
           <DispatchMap
             model={model}
@@ -343,27 +387,9 @@ export function DispatchScreen() {
       </div>
 
       {!isWide && (
-        <div
-          className="border-border/70 bg-surface shadow-raised absolute inset-x-0 bottom-0 z-20 flex flex-col rounded-t-2xl border-t transition-[height] duration-200"
-          style={{ height: isSheetOpen ? SHEET_OPEN : SHEET_PEEK }}
-        >
-          <button
-            type="button"
-            onClick={() => setIsSheetOpen((open) => !open)}
-            aria-expanded={isSheetOpen}
-            className="text-muted hover:text-foreground focus-visible:ring-focus flex w-full shrink-0 items-center justify-center gap-2 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-inset"
-          >
-            <span aria-hidden className="bg-border h-1 w-9 rounded-full" />
-            <span className="sr-only">
-              {t(isSheetOpen ? 'dispatch.sheet.collapse' : 'dispatch.sheet.expand')}
-            </span>
-            <ChevronUpIcon
-              aria-hidden
-              className={'size-4 transition-transform ' + (isSheetOpen ? 'rotate-180' : '')}
-            />
-          </button>
-          <div className="min-h-0 flex-1 overflow-hidden">{panel}</div>
-        </div>
+        <DispatchSheet snap={sheetSnap} heights={heights} onSnapChange={setSheetSnap}>
+          {panel}
+        </DispatchSheet>
       )}
     </div>
   );

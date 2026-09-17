@@ -157,6 +157,31 @@ export const fr: Dictionary = {
       pending: 'Suppression…',
       done: 'Message supprimé.',
     },
+
+    alerts: {
+      title: 'Support',
+      open: 'Alertes du support',
+      openCount_one: 'Alertes du support, {count} non lu',
+      openCount_other: 'Alertes du support, {count} non lus',
+      newMessage: 'Nouveau message au support',
+      newMessages: '{count} nouveaux messages au support',
+      fromName: '{name} : {text}',
+      noText: 'Message de {name}',
+      openMessage: 'Ouvrir',
+      openInbox: 'Ouvrir la boîte',
+      empty: 'Vous êtes à jour',
+      emptyHint: 'Les nouveaux messages apparaissent ici dès leur arrivée.',
+      markAllRead: 'Tout marquer comme lu',
+      more_one: 'et {count} autre non lu',
+      more_other: 'et {count} autres non lus',
+      loadError: "Impossible de charger vos messages non lus.",
+      unknownSender: 'Quelqu’un',
+      sound: "Son d'alerte",
+      desktop: 'Notifications du bureau',
+      desktopTurnOn: 'Activer',
+      desktopBlocked: 'Bloquées. Autorisez les notifications pour ce site dans les réglages du navigateur.',
+      hint: 'Les alertes arrivent tant que Switch Ops est ouvert dans ce navigateur.',
+    },
   },
 
   theme: {
@@ -545,6 +570,7 @@ export const fr: Dictionary = {
     truncated: 'Affichage des {shown} plus récentes sur {total} commandes ouvertes.',
 
     kpi: {
+      label: 'En ce moment',
       needsDriver: 'Sans livreur',
       awaitingRestaurant: 'Attente magasin',
       freeDrivers: 'Livreurs libres',
@@ -567,6 +593,7 @@ export const fr: Dictionary = {
       label: 'Filtrer les listes',
       placeholder: 'N° de commande, nom ou téléphone…',
       clear: 'Effacer le filtre',
+      close: 'Fermer le filtre',
       noOrders: 'Aucune commande ouverte ne correspond à « {query} ».',
       noDrivers: 'Aucun livreur ne correspond à « {query} ».',
       noRestaurants: 'Aucun magasin avec une commande ouverte ne correspond à « {query} ».',
@@ -802,6 +829,7 @@ export const fr: Dictionary = {
     sheet: {
       expand: 'Agrandir le panneau',
       collapse: 'Réduire le panneau',
+      toMap: 'Carte',
     },
   },
 

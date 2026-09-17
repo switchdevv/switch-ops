@@ -398,7 +398,12 @@ export default function DispatchMap({
       />
 
       {status !== 'ready' && (
-        <div className="bg-background/70 pointer-events-none absolute inset-0 z-10 grid place-items-center backdrop-blur-[2px]">
+        <div
+          className="bg-background/70 pointer-events-none absolute inset-0 z-10 grid place-items-center backdrop-blur-[2px]"
+          // Centred in the part of the map a phone's sheet leaves showing, so the retry
+          // button isn't underneath it.
+          style={{ paddingBottom: 'var(--ops-map-inset-bottom, 0px)' }}
+        >
           {status === 'loading' ? (
             <span className="text-caption text-muted bg-surface/90 border-border/70 shadow-card rounded-pill border px-3 py-1.5">
               {t('dispatch.map.loading')}
@@ -451,19 +456,31 @@ function frame(map: MapLibreMap, points: LatLng[], padding: PaddingOptions, maxZ
   map.fitBounds(bounds, { padding: safe, maxZoom, duration: 650 });
 }
 
+/** Whatever the furniture covers, each axis keeps at least this share of the map to frame
+ * in — and never fewer pixels than the floor. */
+const MIN_FRAME_RATIO = 0.25;
+const MIN_FRAME_PX = 64;
+
 /** Padding larger than the map cannot be satisfied: MapLibre gives up and the camera
- * doesn't move at all, which reads as a broken button. Each side is capped at about a
- * third of the map, which is enough to clear the legend without squeezing the view into
- * a slot. (MapLibre's own `PaddingOptions` leaves every side optional; an unset side is
- * no padding.) */
+ * doesn't move at all, which reads as a broken button. So padding is honoured as asked
+ * while it leaves room to frame in, and otherwise both sides of that axis give way in
+ * proportion. Not a flat cap per side: a phone's half-open sheet covers more than half the
+ * map on its own, and capping it would frame the selection underneath the sheet.
+ * (MapLibre's own `PaddingOptions` leaves every side optional; an unset side is no
+ * padding.) */
 function clampPadding(map: MapLibreMap, padding: PaddingOptions): PaddingOptions {
   const { clientWidth, clientHeight } = map.getContainer();
-  const cap = (value: number | undefined, size: number) =>
-    Math.max(0, Math.min(value ?? 0, Math.floor(size * 0.35)));
-  return {
-    top: cap(padding.top, clientHeight),
-    bottom: cap(padding.bottom, clientHeight),
-    left: cap(padding.left, clientWidth),
-    right: cap(padding.right, clientWidth),
-  };
+  const [top, bottom] = fitAxis(padding.top, padding.bottom, clientHeight);
+  const [left, right] = fitAxis(padding.left, padding.right, clientWidth);
+  return { top, bottom, left, right };
+}
+
+function fitAxis(start: number | undefined, end: number | undefined, size: number): [number, number] {
+  const before = Math.max(0, start ?? 0);
+  const after = Math.max(0, end ?? 0);
+  const room = Math.max(0, size - Math.max(MIN_FRAME_PX, size * MIN_FRAME_RATIO));
+  const total = before + after;
+  if (total <= room) return [before, after];
+  const scale = room / total;
+  return [Math.floor(before * scale), Math.floor(after * scale)];
 }

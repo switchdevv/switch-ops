@@ -559,6 +559,17 @@ export function ChatIcon(props: IconProps) {
   );
 }
 
+/** A bell — the support alerts in the shell's header. Not `AlertIcon`, the warning
+ * triangle: this one is somewhere to look, not something wrong. */
+export function BellIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M18 9a6 6 0 1 0-12 0c0 4.2-1.2 5.9-1.85 6.6a.85.85 0 0 0 .6 1.4h14.5a.85.85 0 0 0 .6-1.4C19.2 14.9 18 13.2 18 9Z" />
+      <path d="M10.2 20a2 2 0 0 0 3.6 0" />
+    </Icon>
+  );
+}
+
 /** A shield with a tick — who may use the console (/access). switch-finance's glyph. */
 export function ShieldIcon(props: IconProps) {
   return (

@@ -437,6 +437,16 @@
   filter: invert(1);
 }
 
+/* On a phone the live map's panel is a sheet over the foot of the map, and the
+   attribution rides above it instead of being buried underneath. The inset is set by
+   DispatchScreen; everywhere else it is unset, and the corners stay where MapLibre put
+   them. */
+.ops-map .maplibregl-ctrl-bottom-left,
+.ops-map .maplibregl-ctrl-bottom-right {
+  bottom: var(--ops-map-inset-bottom, 0px);
+  transition: bottom 200ms ease-out;
+}
+
 /* The restaurant form's draggable pin (components/restaurants/location-map.tsx): a
    rounded square turned 45° so one corner points down, anchored at the element's bottom.
    Plain CSS rather than a portal-rendered pin — it carries no state, and MapLibre's drag

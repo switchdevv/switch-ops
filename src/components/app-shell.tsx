@@ -1,14 +1,16 @@
 'use client';
 
-import type { ComponentType, ReactNode, SVGProps } from 'react';
+import { useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAccess } from '@/hooks/use-access';
 import type { MessageKey } from '@/lib/i18n/dictionary';
 import { useI18n } from '@/lib/i18n/provider';
+import { SupportBell } from '@/components/support/support-bell';
 import { AccountMenu } from './account-menu';
 import { BrandMark } from './brand-mark';
 import { LanguageToggle } from './language-toggle';
+import { PageToolbarSlotProvider } from './page-toolbar';
 import {
   BikeIcon,
   ChatIcon,
@@ -62,74 +64,90 @@ export function AppShell({ children }: { children: ReactNode }) {
   const current = items.find((item) => isActive(pathname, item.href));
   const isFullBleed = current?.isFullBleed ?? false;
 
-  return (
-    // A full-bleed page owns the viewport exactly: the shell stops scrolling and hands
-    // the leftover height to `main`, which is what lets a map fill it and its own panel
-    // scroll inside instead of the window doing it.
-    <div className={isFullBleed ? 'flex h-dvh overflow-hidden' : 'flex min-h-dvh'}>
-      <Sidebar items={items} pathname={pathname} />
+  // A callback ref into state rather than a ref object: the page's portal has to render
+  // again once the element exists, and a ref object changing tells nobody.
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Sticky + translucent so content scrolls under the bar rather than being cut
-            off by it; the blur is what keeps the text legible while it does. */}
-        <header className="border-border/70 bg-background/75 sticky top-0 z-20 border-b backdrop-blur-xl">
-          <div className="flex h-16 items-center justify-between gap-4 px-5 lg:px-8">
-            <div className="flex min-w-0 items-center gap-3">
-              <Link href="/orders" className="flex items-center gap-2 lg:hidden">
+  return (
+    <PageToolbarSlotProvider value={toolbarSlot}>
+      {/* A full-bleed page owns the viewport exactly: the shell stops scrolling and hands
+          the leftover height to `main`, which is what lets a map fill it and its own panel
+          scroll inside instead of the window doing it. */}
+      <div className={isFullBleed ? 'flex h-dvh overflow-hidden' : 'flex min-h-dvh'}>
+        <Sidebar items={items} pathname={pathname} />
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Sticky + translucent so content scrolls under the bar rather than being cut
+              off by it; the blur is what keeps the text legible while it does. */}
+          <header className="border-border/70 bg-background/75 sticky top-0 z-20 border-b backdrop-blur-xl">
+            <div className="flex h-16 items-center gap-3 px-5 lg:gap-4 lg:px-8">
+              <Link href="/orders" className="flex shrink-0 items-center lg:hidden">
                 <BrandMark className="size-8" />
               </Link>
-              <span className="text-h6 text-foreground hidden truncate font-bold lg:block">
+              <span className="text-h6 text-foreground hidden shrink-0 font-bold lg:block">
                 {current ? t(current.labelKey) : t('app.title')}
               </span>
-            </div>
 
-            <div className="flex shrink-0 items-center gap-2">
-              <LanguageToggle />
-              <ThemeToggle />
+              {/* The page's own controls, when it has any — see PageToolbar. Otherwise just
+                  the space between the title and the settings. */}
+              <div ref={setToolbarSlot} className="flex min-w-0 flex-1 items-center gap-2" />
+
+              {/* Before the preferences, and at every width: a message waiting is work,
+                  not a setting, and it is the one thing here worth a glance on a phone. */}
+              <div className="shrink-0">
+                <SupportBell />
+              </div>
+
+              {/* Below `lg` this row is the page's, so language and theme move into the
+                  account menu — they are changed once, not watched all evening. */}
+              <div className="hidden shrink-0 items-center gap-2 lg:flex">
+                <LanguageToggle />
+                <ThemeToggle />
+              </div>
               {/* The account lives in the sidebar card on wide screens; there is no
                   sidebar below `lg`, so the same menu hangs off the header avatar. */}
-              <div className="lg:hidden">
+              <div className="shrink-0 lg:hidden">
                 <AccountMenu variant="avatar" />
               </div>
             </div>
-          </div>
 
-          {/* The sidebar is desktop-only, so the same destinations ride along under the
-              header as a scrollable pill row on narrow screens. */}
-          <nav className="flex gap-2 overflow-x-auto px-5 pb-3 lg:hidden">
-            {items.map((item) => {
-              const active = isActive(pathname, item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? 'page' : undefined}
-                  className={
-                    'text-body rounded-pill flex shrink-0 items-center gap-2 px-3.5 py-2 transition-colors ' +
-                    (active
-                      ? 'bg-accent text-accent-foreground font-bold'
-                      : 'bg-surface text-muted border-border/70 border')
-                  }
-                >
-                  <item.icon className="size-4" />
-                  {t(item.labelKey)}
-                </Link>
-              );
-            })}
-          </nav>
-        </header>
+            {/* The sidebar is desktop-only, so the same destinations ride along under the
+                header as a scrollable pill row on narrow screens. */}
+            <nav className="flex gap-2 overflow-x-auto px-5 pb-3 lg:hidden">
+              {items.map((item) => {
+                const active = isActive(pathname, item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? 'page' : undefined}
+                    className={
+                      'text-body rounded-pill flex shrink-0 items-center gap-2 px-3.5 py-2 transition-colors ' +
+                      (active
+                        ? 'bg-accent text-accent-foreground font-bold'
+                        : 'bg-surface text-muted border-border/70 border')
+                    }
+                  >
+                    <item.icon className="size-4" />
+                    {t(item.labelKey)}
+                  </Link>
+                );
+              })}
+            </nav>
+          </header>
 
-        {/* Wider than switch-finance's 7xl: the order rows carry four columns of
-            people and money, and squeezing them under 1400px starts truncating names. */}
-        {isFullBleed ? (
-          <main className="relative flex min-h-0 flex-1">{children}</main>
-        ) : (
-          <main className="mx-auto w-full max-w-[92rem] flex-1 px-5 py-7 lg:px-8 lg:py-9">
-            {children}
-          </main>
-        )}
+          {/* Wider than switch-finance's 7xl: the order rows carry four columns of
+              people and money, and squeezing them under 1400px starts truncating names. */}
+          {isFullBleed ? (
+            <main className="relative flex min-h-0 flex-1">{children}</main>
+          ) : (
+            <main className="mx-auto w-full max-w-[92rem] flex-1 px-5 py-7 lg:px-8 lg:py-9">
+              {children}
+            </main>
+          )}
+        </div>
       </div>
-    </div>
+    </PageToolbarSlotProvider>
   );
 }
 

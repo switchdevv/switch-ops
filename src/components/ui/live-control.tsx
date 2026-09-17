@@ -22,6 +22,7 @@ export function LiveControl({
   isFetching,
   updatedAt,
   now,
+  isCompact,
 }: {
   isLive: boolean;
   onToggle: () => void;
@@ -30,8 +31,15 @@ export function LiveControl({
   /** Epoch ms of the last successful load, or 0 before the first one. */
   updatedAt: number;
   now: number;
+  /** For a phone's header row, shared with other controls: below `sm` the switch shrinks
+   * to its dot, and its word is left to screen readers and the tooltip. */
+  isCompact?: boolean;
 }) {
   const { t, format } = useI18n();
+
+  // `now` ticks on the page's clock, which runs behind a refresh that has only just
+  // landed — and that gap was being read out as "Updated in 3 sec".
+  const updatedAgo = format.relative(new Date(Math.min(updatedAt, now)).toISOString(), now);
 
   return (
     <div className="flex items-center gap-2">
@@ -42,6 +50,7 @@ export function LiveControl({
         title={t(isLive ? 'orders.live.toggleOff' : 'orders.live.toggleOn')}
         className={
           'text-caption focus-visible:ring-focus flex h-9 items-center gap-2 rounded-xl border px-3 font-bold transition-colors outline-none focus-visible:ring-2 ' +
+          (isCompact ? 'max-sm:w-9 max-sm:justify-center max-sm:px-0 ' : '') +
           (isLive
             ? 'border-success/40 bg-success-soft text-success-soft-foreground'
             : 'border-border/70 bg-surface-secondary text-muted hover:text-foreground')
@@ -59,15 +68,17 @@ export function LiveControl({
             />
           )}
         </span>
-        {t(isLive ? 'orders.live.on' : 'orders.live.off')}
+        <span className={isCompact ? 'max-sm:sr-only' : undefined}>
+          {t(isLive ? 'orders.live.on' : 'orders.live.off')}
+        </span>
       </button>
 
-      <span className="text-caption text-faint hidden tabular sm:inline">
+      <span className="text-caption text-faint hidden tabular whitespace-nowrap sm:inline">
         {isFetching
           ? t('orders.live.refreshing')
           : updatedAt === 0
             ? t('orders.live.never')
-            : t('orders.live.updated', { time: format.relative(new Date(updatedAt).toISOString(), now) })}
+            : t('orders.live.updated', { time: updatedAgo })}
       </span>
 
       <Tooltip>

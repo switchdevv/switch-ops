@@ -10,6 +10,7 @@ import { QUEUE_TICK_MS, RUNNER_STALL_MS, TICK_TIMEOUT_MS } from '@/lib/ops/queue
 import { parseErrorKey } from '@/lib/parse/errors';
 import { runQueueTick } from '@/lib/services/queue';
 import { postRunnerMessage, QUEUE_CHANNEL, type RunnerMessage } from '@/lib/services/queue-channel';
+import { startTicker } from '@/lib/worker-ticker';
 
 /**
  * Sends each driver's next queued order the moment they are free. Renders nothing.
@@ -23,9 +24,8 @@ import { postRunnerMessage, QUEUE_CHANNEL, type RunnerMessage } from '@/lib/serv
  *   lib/services/queue.ts makes sure an order is sent only once however many are looking.
  * - **A timer that survives a background tab.** Chrome throttles timers in a tab that has
  *   been hidden for a few minutes down to one wake-up a minute, and this console spends
- *   its evenings in a background tab. Timers inside a dedicated worker are exempt, so the
- *   tick comes from a tiny worker built from a blob. MapLibre does the same, and there's
- *   no CSP on the hosting to forbid it.
+ *   its evenings in a background tab — so the beat comes from a worker, which is exempt
+ *   (lib/worker-ticker.ts).
  * - **The account's own scope.** An admin's runner handles every region; a staff
  *   account's handles its own. A queue in a region nobody with the console open can see
  *   waits for someone who can.
@@ -97,23 +97,6 @@ export function useQueueRunnerStatus(): QueueRunnerStatus {
 }
 
 /* ---- the runner ------------------------------------------------------------------ */
-
-/** Calls `onTick` every `intervalMs`, from a worker when it can. Returns the stop. */
-function startTicker(intervalMs: number, onTick: () => void): () => void {
-  try {
-    const source = `setInterval(function () { postMessage(0); }, ${intervalMs});`;
-    const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
-    const worker = new Worker(url);
-    worker.onmessage = onTick;
-    return () => {
-      worker.terminate();
-      URL.revokeObjectURL(url);
-    };
-  } catch {
-    const id = window.setInterval(onTick, intervalMs);
-    return () => window.clearInterval(id);
-  }
-}
 
 export function QueueRunner() {
   const queryClient = useQueryClient();

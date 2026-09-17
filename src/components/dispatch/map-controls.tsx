@@ -45,7 +45,9 @@ export function MapControls({
 
   return (
     <div className="absolute end-3 top-3 z-20 flex flex-col gap-2">
-      <div className="border-border/70 bg-surface/95 shadow-card flex flex-col overflow-hidden rounded-xl border backdrop-blur">
+      {/* Not on a touch screen, where pinching is how a map is zoomed and two more buttons
+          over a phone-sized map are two more things covering it. */}
+      <div className="border-border/70 bg-surface/95 shadow-card flex flex-col overflow-hidden rounded-xl border backdrop-blur pointer-coarse:hidden">
         <ControlButton label={t('dispatch.map.zoomIn')} onClick={onZoomIn}>
           <PlusIcon className="size-4" />
         </ControlButton>
@@ -109,8 +111,17 @@ export function MapLegend({
   const [isOpen, setIsOpen] = useState(isWide);
 
   return (
-    <div className="absolute start-3 top-3 z-20 w-[15.5rem] max-w-[calc(100%-1.5rem)]">
-      <div className="border-border/70 bg-surface/95 shadow-card overflow-hidden rounded-xl border backdrop-blur">
+    <div
+      // Only as wide as its label while folded — a full-width bar over a phone's map hid
+      // as much as the open legend explains. Open, it stops short of the sheet on a phone
+      // (the inset is DispatchScreen's) and scrolls instead.
+      className={
+        'absolute start-3 top-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-col ' +
+        (isOpen ? 'w-[15.5rem]' : 'w-auto')
+      }
+      style={{ maxHeight: 'calc(100% - 1.5rem - var(--ops-map-inset-bottom, 0px))' }}
+    >
+      <div className="border-border/70 bg-surface/95 shadow-card flex min-h-0 flex-col overflow-hidden rounded-xl border backdrop-blur">
         <button
           type="button"
           onClick={() => setIsOpen((open) => !open)}
@@ -131,7 +142,7 @@ export function MapLegend({
         </button>
 
         {isOpen && (
-          <div className="border-separator/70 flex flex-col gap-3 border-t px-3 pt-2.5 pb-3">
+          <div className="border-separator/70 flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain border-t px-3 pt-2.5 pb-3">
             {/* The order colours are listed once, above both toggles, because they paint
                 both kinds of order pin: the customer's teardrop and the ring around the
                 restaurant it came from. (A pickup has no customer pin — the customer

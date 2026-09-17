@@ -1,6 +1,6 @@
 'use client';
 
-import type { ComponentType, SVGProps } from 'react';
+import type { ComponentType, ReactNode, SVGProps } from 'react';
 import { Button, Popover } from '@heroui/react';
 import { useAccess } from '@/hooks/use-access';
 import { useCities } from '@/hooks/use-cities';
@@ -8,6 +8,8 @@ import { useLogout } from '@/hooks/use-session';
 import { initials } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/provider';
 import { ChevronDownIcon, LogOutIcon, MailIcon, MapPinIcon, PhoneIcon } from './icons';
+import { LanguageToggle } from './language-toggle';
+import { ThemeToggle } from './theme-toggle';
 
 /**
  * The signed-in account, on click of its own avatar.
@@ -108,6 +110,20 @@ export function AccountMenu({ variant }: { variant: 'card' | 'avatar' }) {
 
           {scopeLine && <p className="text-caption text-muted">{scopeLine}</p>}
 
+          {/* Only off the avatar: below `lg` the header row belongs to the page's own
+              controls, so language and theme live here instead. The sidebar card is only
+              shown beside a header that still has them. */}
+          {variant === 'avatar' && (
+            <div className="border-separator/70 flex flex-col gap-2.5 border-t pt-3.5">
+              <Preference label={t('language.label')}>
+                <LanguageToggle />
+              </Preference>
+              <Preference label={t('theme.label')}>
+                <ThemeToggle />
+              </Preference>
+            </div>
+          )}
+
           <Button
             variant="secondary"
             size="sm"
@@ -134,6 +150,15 @@ function Initials({ name, className }: { name: string; className: string }) {
     >
       {initials(name)}
     </span>
+  );
+}
+
+function Preference({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-micro text-muted font-bold tracking-[0.1em] uppercase">{label}</span>
+      {children}
+    </div>
   );
 }
 

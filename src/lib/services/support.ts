@@ -1,7 +1,13 @@
 import { runFunction } from '@/lib/parse/cloud';
 import { MESSAGE_NOT_FOUND, SENDER_GONE } from '@/lib/parse/errors';
-import { count, findOne, findWithCount, pointer, type PageResult, type QueryParam } from '@/lib/parse/query';
-import { senderOf, type ReadMarks, type SenderApp } from '@/lib/ops/support';
+import { count, find, findOne, findWithCount, pointer, type PageResult, type QueryParam } from '@/lib/parse/query';
+import {
+  NEW_MESSAGES_LIMIT,
+  senderOf,
+  type AlertCursor,
+  type ReadMarks,
+  type SenderApp,
+} from '@/lib/ops/support';
 import type { SupportFilters } from '@/lib/url/support-filters';
 import type { MessageSender, SupportMessage } from '@/types/message';
 import type { OrderRow } from '@/types/order';
@@ -138,6 +144,49 @@ export async function getMessage(id: string, pinnedRegion: string): Promise<Supp
     { include: 'user' },
   ]);
   return row ? narrow(row) : null;
+}
+
+/* ---- alerts -------------------------------------------------------------------- */
+
+/**
+ * Where the inbox stands right now, as a cursor to look forward from.
+ *
+ * Read once, when a browser starts watching for the first time: everything already in the
+ * inbox is backlog, which belongs in the bell's count rather than in a burst of
+ * notifications. `{ at: 0 }` when there are no messages at all — then the first message
+ * ever written is an arrival, which is right.
+ */
+export async function newestMessageCursor(): Promise<AlertCursor> {
+  const row = await findOne<SupportMessage>(MESSAGE, [
+    { select: ['createdAt'] },
+    { descending: 'createdAt' },
+  ]);
+  if (!row) return { at: 0, ids: [] };
+  return { at: new Date(row.createdAt).getTime(), ids: [row.objectId] };
+}
+
+/**
+ * The messages saved since the cursor, oldest first — the whole platform's, not just this
+ * account's region.
+ *
+ * Deliberately **not** narrowed to a region by the server. `senderParams` would send a
+ * `matchesQuery` over `_User`, which has no `city` index, and this runs every thirty
+ * seconds in every open console; the caller sorts the handful of rows by `isInScope`
+ * instead. The `Message` class is readable by any Staff session anyway — the region is a
+ * rule about whose work a message is, not a permission.
+ */
+export async function listMessagesSince(cursor: AlertCursor): Promise<SupportMessage[]> {
+  const rows = await find<SupportMessage>(MESSAGE, [
+    { greaterThanOrEqualTo: { key: 'createdAt', value: new Date(cursor.at) } },
+    // The rows already seen at exactly `cursor.at` — see `AlertCursor`.
+    cursor.ids.length > 0 ? { notContainedIn: { key: 'objectId', value: [...cursor.ids] } } : {},
+    { include: 'user' },
+    // Oldest first: a burst longer than the limit is then read in order over the next
+    // beats, instead of the oldest of it never arriving.
+    { ascending: 'createdAt' },
+    { limit: NEW_MESSAGES_LIMIT },
+  ]);
+  return rows.map(narrow);
 }
 
 /** Everything else this account has written to support, newest first. */

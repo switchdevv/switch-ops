@@ -44,14 +44,27 @@ export function useSupportMessages(
   });
 }
 
-/** The number on the Unread tab, with the live marks — it should drop the moment a message
- * is opened. */
-export function useSupportUnreadCount(filters: SupportFilters, marks: ReadMarks, isLive: boolean, isEnabled = true) {
+/**
+ * The number on the Unread tab, with the live marks — it should drop the moment a message
+ * is opened.
+ *
+ * Also the number on the shell's bell, which asks for the same filters (none, beyond the
+ * account's region) and therefore shares this query: one request answers both while the
+ * inbox is open. `intervalMs` is what differs — the bell re-reads slowly, because arrivals
+ * reach it from the alert runner rather than from this timer (see components/support-bell.tsx).
+ */
+export function useSupportUnreadCount(
+  filters: SupportFilters,
+  marks: ReadMarks,
+  isLive: boolean,
+  isEnabled = true,
+  intervalMs = SUPPORT_INTERVAL_MS,
+) {
   return useQuery({
     queryKey: queryKeys.support.unread(filters, marks),
     queryFn: () => countUnread(filters, marks),
     placeholderData: keepPreviousData,
-    refetchInterval: isLive ? SUPPORT_INTERVAL_MS : false,
+    refetchInterval: isLive ? intervalMs : false,
     enabled: isEnabled && marks.since > 0,
   });
 }

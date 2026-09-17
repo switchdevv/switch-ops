@@ -162,6 +162,36 @@ switch-food / switch-driver / switch-manager, switch-dashboard and switch-financ
   staff account's region before each. Account-deletion requests are recognised by the text
   switch-food's Settings prefills. The included `_User` is narrowed at the boundary. Rules in
   `lib/ops/support.ts`, I/O in `lib/services/support.ts`.
+- **Ops are told when support writes** — the console raises the alert itself. There is no
+  web push here: the server sends every staff push (orders *and* support) to the single
+  `_User.pushToken.staff` slot that switch-dashboard writes on each load, so ops would take
+  the dashboard's notifications and receive order pushes with them; a background push can't
+  be silently dropped either. `components/support-alerts.tsx` is mounted in the dashboard
+  layout beside the queue runner and, while any tab is open, looks for new `Message` rows
+  every 30 s — one tab per browser (a Web Lock, **stolen on focus**, so the tab someone is
+  using is the one that alerts, and the one allowed to play a sound), beating from a worker
+  (`lib/worker-ticker.ts`). It walks forward from a cursor of the newest `createdAt` it has
+  seen, shared between tabs through localStorage, so nothing is missed on a reload, nothing
+  repeats when leadership moves, and a clock that is minutes out can't skip a message; a
+  cursor older than ten minutes means the console was shut, and its backlog stays in the
+  bell rather than arriving as a burst. Region and read state are decided in the browser
+  (`isInScope` / `isUnread`), which keeps the tick to a few `Message` rows instead of the
+  `_User`-by-city subquery the inbox pays for. It announces with a toast, the dashboard's
+  own `alert.mp3` and, when the tab isn't focused, a desktop notification; sound and
+  notifications are switched per browser from the bell. The **bell** in the shell header
+  (`components/support/support-bell.tsx`) is the unread inbox, not a second log: it shares
+  the inbox's own unread query and its per-account read marks, so opening a message anywhere
+  empties it. Moving to push later is specified in `docs/support-push-notifications.md`.
+- **The live map gives its height to the orders.** Its Live switch and region filter are
+  portalled into the shell's header through `PageToolbar` (`components/page-toolbar.tsx`),
+  not stacked in the panel; below `lg` that header row is the page's, so language and theme
+  move into the avatar's account menu on every page. The panel keeps one strip of three
+  numbers above the search and tabs, and its footnotes sit after the last row. From `lg` the
+  panel sits beside the map; below it, it is `DispatchSheet`, a bottom sheet with three stops
+  (peek = the numbers, half, full) dragged or tapped by its grab bar, whose settled height
+  feeds the map's framing padding and `--ops-map-inset-bottom` (attribution, legend, loading
+  card). The map wrapper is `isolate`: pins carry z-indexes up to 90, which otherwise paint
+  over the sheet.
 - **The maps are client-only.** MapLibre touches `window` on import, so
   `components/dispatch/dispatch-map.tsx` and the restaurant form's
   `components/restaurants/location-map.tsx` are loaded with `next/dynamic` + `ssr: false`,

@@ -113,6 +113,13 @@ export function supportMessageHref(id: string): string {
   return `${SUPPORT_PATH}?${KEYS.id}=${encodeURIComponent(id)}`;
 }
 
+/** The inbox showing only what this account hasn't opened — where the bell and a
+ * "several arrived" alert send you. A query string of its own, so the inbox doesn't
+ * restore the list as it was last left (see SupportScreen). */
+export function supportUnreadHref(): string {
+  return `${SUPPORT_PATH}?${KEYS.unread}=1`;
+}
+
 /**
  * Pins a staff account's inbox to its own region — applied where the filters are read, as
  * everywhere else in this console, and with the same caveat: a UX boundary. The `Message`

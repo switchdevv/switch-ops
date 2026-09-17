@@ -67,9 +67,13 @@ export function isDeletionRequest(text: string | undefined): boolean {
  * anyway; this just keeps a very long message from being laid out in full to be hidden. */
 export const PREVIEW_CHARS = 240;
 
-export function previewOf(text: string | undefined): string {
+/** How much of it an alert shows. Far less: a toast and a system notification are read at
+ * a glance, and neither clamps — one long message would fill the screen corner. */
+export const ALERT_PREVIEW_CHARS = 90;
+
+export function previewOf(text: string | undefined, max = PREVIEW_CHARS): string {
   const flat = (text ?? '').replace(/\s+/g, ' ').trim();
-  return flat.length > PREVIEW_CHARS ? `${flat.slice(0, PREVIEW_CHARS)}…` : flat;
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }
 
 /** The limits of a push reply. FCM itself allows more, but a notification is read on a lock
@@ -99,4 +103,81 @@ export type ReadMarks = { since: number; ids: readonly string[] };
 export function isUnread(marks: ReadMarks, message: { objectId: string; createdAt: string }): boolean {
   if (marks.since === 0) return false;
   return new Date(message.createdAt).getTime() > marks.since && !marks.ids.includes(message.objectId);
+}
+
+/* ---- alerts ---------------------------------------------------------------------- */
+
+/**
+ * Rules for the alerts the console raises when a message arrives — see
+ * components/support-alerts.tsx for the runner that applies them.
+ */
+
+/** How often the console looks for new messages. The inbox's own pace
+ * (`SUPPORT_INTERVAL_MS`): a support message is answered in minutes, not seconds. */
+export const SUPPORT_ALERT_TICK_MS = 30_000;
+
+/** A look still running after this is abandoned on the next beat. Parse 8 fetches have no
+ * timeout of their own, and a look that never returns would stop every later one. */
+export const SUPPORT_ALERT_TIMEOUT_MS = 20_000;
+
+/** How many new messages one look takes. A burst longer than this is read over the
+ * following beats, as the cursor advances. */
+export const NEW_MESSAGES_LIMIT = 50;
+
+/**
+ * How stale a saved cursor may be before it is thrown away rather than caught up on.
+ *
+ * Past this, the console was closed rather than merely reloading or handing the look
+ * between tabs, and the messages missed in the meantime belong in the bell's count — not
+ * in a burst of notifications for things that happened while nobody was watching.
+ */
+export const ALERT_CURSOR_MAX_AGE_MS = 10 * 60 * 1000;
+
+/** How often the bell's count re-reads on its own, beyond the arrivals the runner reports:
+ * slow, because it exists only to notice deletions and messages read in another browser. */
+export const SUPPORT_BELL_REFRESH_MS = 5 * 60 * 1000;
+
+/** How many unread messages the bell lists before it stops and offers the inbox. */
+export const BELL_LIST_SIZE = 8;
+
+/**
+ * Where the console has read up to.
+ *
+ * `at` is the newest `createdAt` it has seen, in epoch ms, and `ids` are the messages at
+ * exactly that moment. The next look asks for everything at or after `at` and throws those
+ * ids away, which is what makes two messages saved in the same millisecond safe: asking for
+ * *after* `at` would silently drop the second one.
+ *
+ * Only server timestamps are ever compared. A PC whose clock is minutes off would otherwise
+ * hide every message written inside that gap.
+ */
+export type AlertCursor = { at: number; ids: readonly string[] };
+
+/** Where a cursor stands after a look, given the rows it returned (any order). */
+export function advanceCursor(cursor: AlertCursor, rows: SupportMessage[]): AlertCursor {
+  let at = cursor.at;
+  for (const row of rows) {
+    const time = new Date(row.createdAt).getTime();
+    if (Number.isFinite(time) && time > at) at = time;
+  }
+  if (at === cursor.at && rows.length === 0) return cursor;
+
+  const ids = rows
+    .filter((row) => new Date(row.createdAt).getTime() === at)
+    .map((row) => row.objectId);
+  // The moment didn't move, so the ids already parked there are still in the way.
+  return { at, ids: at === cursor.at ? [...new Set([...cursor.ids, ...ids])] : ids };
+}
+
+/**
+ * Whether a message is one this account is meant to see — the inbox's region rule, applied
+ * to a row already in hand rather than sent to the server as `senderParams`' `matchesQuery`.
+ *
+ * `pinnedRegion` is `''` for an admin, who sees every region here, as in the inbox. A staff
+ * account sees its own, and a message whose sender came back as a bare pointer (the account
+ * is gone, or can't be read) belongs to no region, so it is left to admins.
+ */
+export function isInScope(message: Pick<SupportMessage, 'user'>, pinnedRegion: string): boolean {
+  if (!pinnedRegion) return true;
+  return senderOf(message)?.city?.objectId === pinnedRegion;
 }

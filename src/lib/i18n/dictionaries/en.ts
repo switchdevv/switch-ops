@@ -158,6 +158,31 @@ export const en = {
       pending: 'Deleting…',
       done: 'Message deleted.',
     },
+
+    alerts: {
+      title: 'Support',
+      open: 'Support alerts',
+      openCount_one: 'Support alerts, {count} unread',
+      openCount_other: 'Support alerts, {count} unread',
+      newMessage: 'New support message',
+      newMessages: '{count} new support messages',
+      fromName: '{name}: {text}',
+      noText: 'Message from {name}',
+      openMessage: 'Open',
+      openInbox: 'Open inbox',
+      empty: "You're all caught up",
+      emptyHint: 'New messages land here as they arrive.',
+      markAllRead: 'Mark all as read',
+      more_one: 'and {count} more unread',
+      more_other: 'and {count} more unread',
+      loadError: "Couldn't load your unread messages.",
+      unknownSender: 'Someone',
+      sound: 'Alert sound',
+      desktop: 'Desktop notifications',
+      desktopTurnOn: 'Turn on',
+      desktopBlocked: "Blocked. Allow notifications for this site in your browser's settings.",
+      hint: 'Alerts arrive while Switch Ops is open in this browser.',
+    },
   },
 
   theme: {
@@ -544,6 +569,7 @@ export const en = {
     truncated: 'Showing the {shown} newest of {total} open orders.',
 
     kpi: {
+      label: 'Right now',
       needsDriver: 'Need a driver',
       awaitingRestaurant: 'Awaiting restaurant',
       freeDrivers: 'Free drivers',
@@ -566,6 +592,7 @@ export const en = {
       label: 'Filter the lists',
       placeholder: 'Order #, name or phone…',
       clear: 'Clear filter',
+      close: 'Close the filter',
       noOrders: 'No open order matches “{query}”.',
       noDrivers: 'No driver matches “{query}”.',
       noRestaurants: 'No restaurant with an open order matches “{query}”.',
@@ -799,6 +826,7 @@ export const en = {
     sheet: {
       expand: 'Expand the panel',
       collapse: 'Collapse the panel',
+      toMap: 'Map',
     },
   },
 
