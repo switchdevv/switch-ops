@@ -289,8 +289,9 @@ export async function deleteMessage(id: string, pinnedRegion: string): Promise<v
  *
  * Deliberately no `newOrder`, `playSound`, `launchApp`, `id` or `cancel`: those belong to
  * the platform's order payloads, and in the driver app they would start the offer siren or
- * drop the delivery the driver is on (see lib/services/notify.ts). Every `data` value is a
- * string, because FCM takes no other type.
+ * drop the delivery the driver is on (see lib/services/notify.ts). No `icon` either: the app
+ * builds on phones crash on a name they don't know (see `messageDriver` in
+ * lib/services/drivers.ts). Every `data` value is a string, because FCM takes no other type.
  *
  * The account is taken from the message as re-read, never from the screen. `sendPush` reads
  * `pushToken[app]` off a row that may have no `pushToken` at all — a TypeError on the server,
@@ -312,6 +313,6 @@ export async function replyToMessage(
     body,
     userId: sender.objectId,
     appType: app,
-    data: { title, body, icon: 'info', screen: 'Support', button },
+    data: { title, body, screen: 'Support', button },
   });
 }

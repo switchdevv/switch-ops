@@ -243,7 +243,9 @@ export async function removeManagerFromRestaurant(managerId: string, pinnedRegio
 /**
  * A push to the manager app, in ops' own words. With no `newOrder`, `cancel` or `button` in
  * `data`, the app's `showMessage` shows the title and text as a popup and does nothing else
- * (switch-manager src/screens/Home/Home.js). Every value a string, for FCM.
+ * (switch-manager src/screens/Home/Home.js). Every value a string, for FCM. No `icon`: the
+ * manager builds on phones crash on a name they don't know (see `messageDriver` in
+ * lib/services/drivers.ts).
  */
 export async function messageManager(id: string, title: string, body: string): Promise<void> {
   await runFunction('sendPush', {
@@ -251,6 +253,6 @@ export async function messageManager(id: string, title: string, body: string): P
     body,
     userId: id,
     appType: 'manager',
-    data: { title, body, icon: 'info' },
+    data: { title, body },
   });
 }

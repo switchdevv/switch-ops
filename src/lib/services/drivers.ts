@@ -287,10 +287,19 @@ export async function setDriverEnabled(id: string, enabled: boolean, pinnedRegio
 /**
  * Sends a driver a push with ops' own words.
  *
- * Only `title`, `body` and `icon` in the payload: without `newOrder` or `cancel` the driver
- * app's `showMessage` shows the text as a card and does nothing else
+ * Only `title` and `body` in the payload: without `newOrder` or `cancel` the driver app's
+ * `showMessage` shows the text as a card and does nothing else
  * (switch-driver/src/screens/Home/Home.js). Every `data` value is a string, because the
  * platform hands `data` straight to FCM, which takes no other type.
+ *
+ * **No `icon` — a name the app doesn't know crashes it.** Each app turns `data.icon` into a
+ * picture from a fixed list (`MESSAGE_ICON_TYPES` in its src/ui/Message/Message.js) and,
+ * until the fix of 2026-09-17, rendered any other name as a native view by that name, which
+ * takes the app down as the push arrives. `info` is only on the list from that fix on, and
+ * the builds on phones predate it, so every message this function, `messageManager` and
+ * support replies sent with `icon: 'info'` crashed the app it reached. switch-dashboard never
+ * sends an icon, which is why its pushes never did. Put `info` back once the fixed builds are
+ * what drivers, managers and customers run.
  *
  * `sendPush` refuses a driver whose app never registered for notifications; that refusal is
  * passed on, because unlike the queue's heads-up, a message that didn't go is exactly what
@@ -302,6 +311,6 @@ export async function messageDriver(id: string, title: string, body: string): Pr
     body,
     userId: id,
     appType: 'driver',
-    data: { title, body, icon: 'info' },
+    data: { title, body },
   });
 }
