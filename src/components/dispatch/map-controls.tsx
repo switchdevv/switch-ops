@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { useMediaQuery } from '@/hooks/use-media-query';
 import { useI18n } from '@/lib/i18n/provider';
 import {
   DRIVER_COLOR_VAR,
@@ -95,7 +94,7 @@ function ControlButton({
  * that red pin?" and "show me only the red pins". Keeping them apart would mean two
  * floating cards over a map that has no room for either, and a key nobody can act on.
  *
- * Collapsed by default on a phone, where it would otherwise cover the map it explains.
+ * Collapsed by default everywhere: open, it covers the map it explains.
  */
 export function MapLegend({
   layers,
@@ -107,8 +106,7 @@ export function MapLegend({
   counts: DispatchCounts;
 }) {
   const { t, format } = useI18n();
-  const isWide = useMediaQuery('(min-width: 1024px)');
-  const [isOpen, setIsOpen] = useState(isWide);
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
     <div

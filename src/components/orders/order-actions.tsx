@@ -2,12 +2,14 @@
 
 import { useEffect, useId, useState } from 'react';
 import { Button, Modal } from '@heroui/react';
-import { useConfirmOrder, useEditOrder, useUnassignDriver } from '@/hooks/use-order-actions';
+import { useCancelOrder, useConfirmOrder, useEditOrder, useUnassignDriver } from '@/hooks/use-order-actions';
 import { shortId } from '@/lib/format';
 import type { MessageKey } from '@/lib/i18n/dictionary';
 import { useI18n } from '@/lib/i18n/provider';
 import {
   buildOrderEdit,
+  CANCEL_REASON_MAX,
+  canCancelOrder,
   canConfirm,
   canUnassignDriver,
   draftFrom,
@@ -17,26 +19,43 @@ import {
   type MoneyField,
   type OrderEditDraft,
 } from '@/lib/ops/order-edit';
+import { callsNotDone, showsCalls } from '@/lib/ops/order-calls';
 import { statusLabelKey } from '@/lib/ops/order-status';
 import { parseErrorKey } from '@/lib/parse/errors';
 import type { OrderRow } from '@/types/order';
 import { SelectField } from '@/components/ui/select-field';
 import { AlertIcon, CheckIcon, CloseIcon } from '@/components/icons';
 import { ConfirmOrderStep, type ChosenDriver } from './confirm-order-step';
+import { OrderCalls } from './order-calls';
 
 /**
- * Confirm, Unassign and Edit, for one order — on the board's detail and on the live map's
- * alike.
+ * Confirm, Unassign, Cancel and Edit, for one order — on the board's detail and on the live map's
+ * alike — with ops' two calls under them (components/orders/order-calls.tsx).
  *
  * Confirm and Unassign each ask once, inline, before they go: one notifies the customer,
  * the other takes an order off a driver's phone, so neither is something a stray click
- * should do. Edit opens a dialog, because it is a form — the dashboard's status and prices,
+ * should do. Cancel asks too, with switch-dashboard's reason and notify switch: the reason
+ * is what the customer and the driver read on their phones. Edit opens a dialog, because it is a form — the dashboard's status and prices,
  * with the total checked against the amounts above it.
+ *
+ * The calls lead into Confirm: marking the restaurant's call done on a placed order opens
+ * the Confirm step straight away, since confirming is the next thing to do — and asking is
+ * still all it does until someone presses it.
  */
 
 export type ActionableOrder = Pick<
   OrderRow,
-  'objectId' | 'status' | 'canceled' | 'deliveryType' | 'options' | 'restaurant' | 'user' | 'city' | 'driver'
+  | 'objectId'
+  | 'status'
+  | 'canceled'
+  | 'deliveryType'
+  | 'options'
+  | 'restaurant'
+  | 'user'
+  | 'city'
+  | 'driver'
+  | 'opsCustomerCall'
+  | 'opsRestaurantCall'
 >;
 
 type Feedback =
@@ -48,19 +67,58 @@ type Feedback =
  * refresh that puts someone else on the order closes the question rather than quietly
  * turning it into one about the new driver.
  */
-type Armed = { kind: 'confirm' } | { kind: 'unassign'; driver: ChosenDriver } | null;
+type Armed = { kind: 'confirm' } | { kind: 'unassign'; driver: ChosenDriver } | { kind: 'cancel' } | null;
 
-export function OrderActions({ order, className }: { order: ActionableOrder; className?: string }) {
+export function OrderActions({
+  order,
+  confirmRequest = 0,
+  className,
+}: {
+  order: ActionableOrder;
+  /**
+   * Bumped when the restaurant's call was marked done somewhere this component can't hear
+   * it — a chip on the board's row, which opens the row to confirm. Each new value opens the
+   * Confirm step once; 0 asks for nothing.
+   */
+  confirmRequest?: number;
+  className?: string;
+}) {
   const { t } = useI18n();
-  const [armed, setArmed] = useState<Armed>(null);
+  const [armed, setArmed] = useState<Armed>(() =>
+    confirmRequest > 0 && canConfirm(order) ? { kind: 'confirm' } : null,
+  );
+  const [seenConfirmRequest, setSeenConfirmRequest] = useState(confirmRequest);
   const [isEditing, setIsEditing] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const confirmMutation = useConfirmOrder();
   const unassignMutation = useUnassignDriver();
+  const cancelMutation = useCancelOrder();
 
   const orderNumber = shortId(order.objectId);
   const isConfirmable = canConfirm(order);
+
+  // A new request while this is already on screen (the row was open). Adjusted during
+  // render rather than in an effect, like the orders toolbar's search box: the step
+  // appears in the same paint as the mark that asked for it.
+  if (confirmRequest !== seenConfirmRequest) {
+    setSeenConfirmRequest(confirmRequest);
+    if (confirmRequest > 0 && isConfirmable) {
+      setFeedback(null);
+      setArmed({ kind: 'confirm' });
+    }
+  }
+
+  const armConfirmAfterLaunch = () => {
+    setFeedback(null);
+    setArmed({ kind: 'confirm' });
+  };
+  const hasCalls = showsCalls(order);
+  const areCallsDone = callsNotDone(order).length === 0;
   const isUnassignable = canUnassignDriver(order);
+  const isCancelable = canCancelOrder(order);
+  // Closed the moment the order can't be cancelled any more — cancelled from another
+  // console, or collected by the driver while the question was open.
+  const isCancelOpen = armed?.kind === 'cancel' && (isCancelable || cancelMutation.isPending);
   const driverName = order.driver?.fullname ?? t('common.none');
   const unassignFrom = armed?.kind === 'unassign' ? armed.driver : null;
   // Closed the moment the order stops carrying that driver — delivered, cancelled by them,
@@ -135,6 +193,23 @@ export function OrderActions({ order, className }: { order: ActionableOrder; cla
     });
   };
 
+  const cancel = (reason: string, notify: boolean) => {
+    cancelMutation.mutate({ order, reason, notify }, {
+      onSuccess: () => {
+        setArmed(null);
+        setFeedback({ kind: 'success', messageKey: notify ? 'orders.actions.canceled' : 'orders.actions.canceledQuietly' });
+      },
+      onError: (error) => {
+        setArmed(null);
+        setFeedback({
+          kind: 'error',
+          titleKey: 'orders.actions.cancelFailed',
+          messageKey: parseErrorKey(error, 'cancel'),
+        });
+      },
+    });
+  };
+
   return (
     <div className={`flex flex-col gap-2 ${className ?? ''}`}>
       <div className="flex flex-wrap items-center gap-2">
@@ -176,7 +251,33 @@ export function OrderActions({ order, className }: { order: ActionableOrder; cla
         >
           {t('orders.actions.edit')}
         </Button>
+        {isCancelable && (
+          <Button
+            variant="danger-soft"
+            size="sm"
+            isDisabled={isCancelOpen}
+            onPress={() => {
+              setFeedback(null);
+              cancelMutation.reset();
+              setArmed({ kind: 'cancel' });
+            }}
+          >
+            <CloseIcon aria-hidden className="size-4" />
+            {t('orders.actions.cancelOrder')}
+          </Button>
+        )}
       </div>
+
+      {hasCalls && <OrderCalls order={order} onLaunched={armConfirmAfterLaunch} />}
+
+      {/* Both calls done and the order still waiting: say what's left, unless the Confirm
+          step is already open below. */}
+      {hasCalls && areCallsDone && isConfirmable && armed?.kind !== 'confirm' && (
+        <p className="text-caption bg-success-soft text-success-soft-foreground flex items-center gap-2 rounded-lg px-2.5 py-2 font-bold">
+          <CheckIcon aria-hidden className="size-4 shrink-0" />
+          {t('orders.calls.readyToConfirm')}
+        </p>
+      )}
 
       {/* Gone the moment the order stops being confirmable — the restaurant accepted it
           from the manager app while the question was open. */}
@@ -196,6 +297,15 @@ export function OrderActions({ order, className }: { order: ActionableOrder; cla
           isPending={unassignMutation.isPending}
           onCancel={() => setArmed(null)}
           onConfirm={() => unassign(unassignFrom)}
+        />
+      )}
+
+      {isCancelOpen && (
+        <CancelOrderStep
+          order={order}
+          isPending={cancelMutation.isPending}
+          onCancel={() => setArmed(null)}
+          onConfirm={cancel}
         />
       )}
 
@@ -305,14 +415,119 @@ function UnassignDriverStep({
 }
 
 /**
+ * The question Cancel asks before it goes: switch-dashboard's Cancel Order dialog, inline.
+ * The reason is required, as there — it is the body of the push the customer and the
+ * driver get — and notifying is on unless ops switch it off.
+ */
+function CancelOrderStep({
+  order,
+  isPending,
+  onCancel,
+  onConfirm,
+}: {
+  order: ActionableOrder;
+  isPending: boolean;
+  onCancel: () => void;
+  onConfirm: (reason: string, notify: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const id = useId();
+  const errorId = useId();
+  const [reason, setReason] = useState('');
+  const [notify, setNotify] = useState(true);
+  const [isMissing, setIsMissing] = useState(false);
+  const orderNumber = shortId(order.objectId);
+  const hasDriver = Boolean(order.driver?.objectId);
+
+  const submit = () => {
+    if (!reason.trim()) {
+      setIsMissing(true);
+      return;
+    }
+    onConfirm(reason.trim(), notify);
+  };
+
+  return (
+    <form
+      className="border-danger/40 bg-surface flex flex-col gap-3 rounded-xl border p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <div className="flex flex-col gap-1">
+        <p className="text-body font-bold">
+          {t('orders.actions.cancelTitle', { order: orderNumber, restaurant: order.restaurant?.name ?? t('common.none') })}
+        </p>
+        <p className="text-caption text-muted">{t('orders.actions.cancelHint')}</p>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor={id} className="text-micro text-muted font-bold tracking-[0.1em] uppercase">
+          {t('orders.actions.cancelReason')}
+        </label>
+        <textarea
+          id={id}
+          rows={2}
+          autoFocus
+          maxLength={CANCEL_REASON_MAX}
+          value={reason}
+          disabled={isPending}
+          placeholder={t('orders.actions.cancelReasonPlaceholder')}
+          onChange={(event) => {
+            setReason(event.target.value);
+            setIsMissing(false);
+          }}
+          aria-invalid={isMissing || undefined}
+          aria-describedby={isMissing ? errorId : undefined}
+          className={
+            'text-body bg-field-background text-field-foreground focus-visible:ring-focus w-full resize-none rounded-xl border px-3 py-2 outline-none focus-visible:ring-2 ' +
+            (isMissing ? 'border-danger' : 'border-field-border')
+          }
+        />
+        {isMissing && (
+          <p id={errorId} className="text-micro text-danger">
+            {t('orders.actions.cancelReasonRequired')}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <CheckField label={t('orders.actions.cancelNotify')} isChecked={notify} onChange={setNotify} />
+        <p className="text-caption text-muted">
+          {notify
+            ? t(hasDriver ? 'orders.actions.cancelNotifyDriver' : 'orders.actions.cancelNotifyCustomer', {
+                driver: order.driver?.fullname ?? t('common.none'),
+              })
+            : t('orders.actions.cancelSilent')}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" isDisabled={isPending} onPress={onCancel}>
+          {t('orders.actions.keepOrder')}
+        </Button>
+        <Button type="submit" variant="danger" size="sm" isPending={isPending}>
+          {isPending ? t('orders.actions.canceling') : t('orders.actions.cancelConfirm', { order: orderNumber })}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/**
  * switch-dashboard's edit dialog: status, canceled, and the order's money.
  *
  * One thing it adds: the total is checked against the amounts above it, by the customer
  * app's own formula, and offered as a one-click fix when they disagree. Changing a price
  * on the dashboard means remembering to redo the sum by hand, and a total that no longer
  * matches its parts is what the driver collects.
+ *
+ * Exported because the support inbox opens it too: a driver messaging ops the real total
+ * of the order in their hand is the commonest correction there is, and it should not cost
+ * a trip to the board and back (components/support/sender-deliveries.tsx).
  */
-function EditOrderDialog({
+export function EditOrderDialog({
   order,
   onClose,
   onSaved,

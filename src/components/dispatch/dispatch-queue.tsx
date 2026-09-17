@@ -20,7 +20,9 @@ import {
   type DriverState,
   type OrderPhase,
 } from '@/lib/ops/dispatch';
+import { canMarkCalls } from '@/lib/ops/order-calls';
 import { retryAtOf, sentAtOf } from '@/lib/ops/queue';
+import { CallChips } from '@/components/orders/order-calls';
 import { PickupBadge } from '@/components/ui/pickup-badge';
 import { ArrowRightIcon, ClockIcon, InboxIcon, PhoneIcon, QueueIcon, RefreshIcon } from '@/components/icons';
 import { HoursText } from './restaurant-hours-text';
@@ -255,6 +257,9 @@ export function QueueOrderRow({
             an amber pickup waiting on the kitchen must not read as a delivery about to need
             a driver. */}
         {row.deliveryType !== 'delivery' && <PickupBadge />}
+        {/* Ops' two calls, while they still matter. Marks only: the row is a button, and
+            the calls are marked in the order's detail, one tap away. */}
+        {canMarkCalls(row) && <CallChips order={row} readOnly />}
         {order.phase === 'needsDriver' && (
           <Tag tone="danger">{t('dispatch.queue.noDriver')}</Tag>
         )}

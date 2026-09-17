@@ -3,6 +3,7 @@ import { MESSAGE_NOT_FOUND, SENDER_GONE } from '@/lib/parse/errors';
 import { count, find, findOne, findWithCount, pointer, type PageResult, type QueryParam } from '@/lib/parse/query';
 import {
   NEW_MESSAGES_LIMIT,
+  replyCopyFor,
   senderOf,
   type AlertCursor,
   type ReadMarks,
@@ -27,7 +28,12 @@ const USER = '_User';
  *   that is the region a message belongs to here too, matched through the `user` pointer.
  *   A sender with no region is only seen by admins — the same people the server notifies.
  * - **Replies.** `sendPush` to the sender's account, which all three apps show as a card
- *   with the title and the text (their Home screens' `showMessage`).
+ *   with the title and the text (their Home screens' `showMessage`) — and, since ops and
+ *   drivers use this inbox to talk while a delivery runs, with a button that opens the
+ *   app's own Support screen so the answer comes straight back (see `replyToMessage`).
+ * - **A driver's deliveries.** Support is where a driver says what an order really came to,
+ *   so a driver's message is read beside the orders they were carrying when they wrote it
+ *   (see `listSenderDeliveries`).
  *
  * `deleteMessages` and `sendPush` check a role and nothing else — no region — so a staff
  * account is confined here, before each call, by re-reading the message within its region.
@@ -57,6 +63,7 @@ function narrowSender(user: Record<string, unknown>): MessageSender {
     enabled: pick('enabled', (value) => typeof value === 'boolean'),
     city: pick('city', isPointer),
     managerStore: pick('managerStore', isPointer),
+    language: pick('language', isString),
   };
 }
 
@@ -202,8 +209,8 @@ export function listSenderMessages(userId: string, pinnedRegion: string): Promis
   ]);
 }
 
-/** The sender's latest orders as a customer, for context — the thing most messages are
- * about. A staff account sees only the ones in its region, as on the board. */
+/** The sender's latest orders as a customer, for context. A staff account sees only the
+ * ones in its region, as on the board. */
 export const RECENT_ORDERS_LIMIT = 5;
 
 export function listSenderOrders(userId: string, pinnedRegion: string): Promise<PageResult<OrderRow>> {
@@ -214,6 +221,43 @@ export function listSenderOrders(userId: string, pinnedRegion: string): Promise<
     { include: 'city' },
     { descending: 'createdAt' },
     { limit: RECENT_ORDERS_LIMIT },
+  ]);
+}
+
+/**
+ * The deliveries a driver was carrying around the time they wrote — the thing their
+ * message is almost always about.
+ *
+ * **Anchored on the message, not on now.** A driver carries one order at a time and writes
+ * about the one in hand, so what a dispatcher needs is the run of orders that led up to
+ * those words — the same set whether the message is read a minute later or the next
+ * morning. Newest first, so the first row is the one they were most likely on.
+ *
+ * `createdAt` is when the *customer placed* the order, which is the only time any of this
+ * is stamped with: `Order` carries no accepted-at, collected-at or delivered-at column
+ * (switch-server `_SCHEMA.json`), and `updatedAt` moves on every later edit, including the
+ * one ops are about to make in answer to this message. So the console shows the gap and
+ * lets the person reading decide, rather than claiming to know which order was in hand.
+ *
+ * The customer is included as well as the restaurant: a driver's "he added a dish" is
+ * about a person ops may have to call.
+ */
+export const DELIVERIES_LIMIT = 5;
+
+export function listSenderDeliveries(
+  driverId: string,
+  before: string,
+  pinnedRegion: string,
+): Promise<OrderRow[]> {
+  return find<OrderRow>('Order', [
+    { equalTo: { key: 'driver', value: pointer(USER, driverId) } },
+    { lessThanOrEqualTo: { key: 'createdAt', value: new Date(before) } },
+    pinnedRegion ? { equalTo: { key: 'city', value: pointer('City', pinnedRegion) } } : {},
+    { include: 'restaurant' },
+    { include: 'user' },
+    { include: 'city' },
+    { descending: 'createdAt' },
+    { limit: DELIVERIES_LIMIT },
   ]);
 }
 
@@ -235,9 +279,18 @@ export async function deleteMessage(id: string, pinnedRegion: string): Promise<v
 /**
  * Answers a message with a push to its sender's app, through `sendPush`.
  *
- * Only `title`, `body` and `icon` in `data`, as `messageDriver` sends: without an order or a
- * screen in it, each app's `showMessage` shows the card and does nothing else. Every `data`
- * value is a string, because FCM takes no other type.
+ * **The card carries a Reply button.** All three apps build the card for a push the same
+ * way (`showMessage` in each app's Home screen): `data.button` gives it a button, and
+ * `data.screen` is the route that button opens — here each app's own `Support`, whose form
+ * saves the next `Message`. That is what makes this an exchange rather than a broadcast,
+ * which is how ops and drivers use it while a delivery is running. The button's word and
+ * the card's title come from `replyCopyFor`, in the language the sender's app is in; the
+ * body is ops' own words, untouched.
+ *
+ * Deliberately no `newOrder`, `playSound`, `launchApp`, `id` or `cancel`: those belong to
+ * the platform's order payloads, and in the driver app they would start the offer siren or
+ * drop the delivery the driver is on (see lib/services/notify.ts). Every `data` value is a
+ * string, because FCM takes no other type.
  *
  * The account is taken from the message as re-read, never from the screen. `sendPush` reads
  * `pushToken[app]` off a row that may have no `pushToken` at all — a TypeError on the server,
@@ -246,7 +299,6 @@ export async function deleteMessage(id: string, pinnedRegion: string): Promise<v
 export async function replyToMessage(
   id: string,
   app: SenderApp,
-  title: string,
   body: string,
   pinnedRegion: string,
 ): Promise<void> {
@@ -254,11 +306,12 @@ export async function replyToMessage(
   if (!message) throw new Error(MESSAGE_NOT_FOUND);
   const sender = senderOf(message);
   if (!sender) throw new Error(SENDER_GONE);
+  const { title, button } = replyCopyFor(sender.language);
   await runFunction('sendPush', {
     title,
     body,
     userId: sender.objectId,
     appType: app,
-    data: { title, body, icon: 'info' },
+    data: { title, body, icon: 'info', screen: 'Support', button },
   });
 }

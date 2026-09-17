@@ -39,6 +39,7 @@ import { SearchBox } from '@/components/restaurants/search-box';
 import { CheckIcon } from '@/components/icons';
 import { MessageReader, ReaderPlaceholder } from './message-reader';
 import { MessageRow } from './message-row';
+import { REPLY_BOX_ID } from './reply-composer';
 
 const RANGE_LABEL_KEY: Record<SupportRange, MessageKey> = {
   today: 'orders.range.today',
@@ -142,15 +143,25 @@ export function SupportScreen() {
   const olderHref =
     selectedIndex >= 0 && selectedIndex < rows.length - 1 ? hrefFor(rows[selectedIndex + 1].objectId) : null;
 
-  // J and K step through the page, as in every mail client. Ignored while typing or with a
-  // dialog open, and with any modifier held so browser shortcuts still work.
+  // J and K step through the page and R answers, as in every mail client — this inbox is
+  // read the same way, one message after another, with a reply to most of them. Ignored
+  // while typing or with a dialog open, and with any modifier held so browser shortcuts
+  // still work.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const key = event.key.toLowerCase();
-      if (key !== 'j' && key !== 'k') return;
+      if (key !== 'j' && key !== 'k' && key !== 'r') return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return;
+      if (key === 'r') {
+        const box = document.getElementById(REPLY_BOX_ID);
+        if (!box) return;
+        event.preventDefault();
+        box.scrollIntoView({ block: 'nearest' });
+        box.focus();
+        return;
+      }
       if (rows.length === 0) return;
       const index = selectedIndex === -1 ? (key === 'j' ? -1 : rows.length) : selectedIndex;
       const next = rows[key === 'j' ? index + 1 : index - 1];

@@ -1,4 +1,5 @@
 import { parsePreset, resolveRange, type DateRange, type RangePreset } from '@/lib/ops/date-range';
+import { CALL_FILTERS, type CallFilter } from '@/lib/ops/order-calls';
 import { ORDER_STAGES, type OrderStage } from '@/lib/ops/order-status';
 import type { DeliveryType } from '@/types/order';
 
@@ -24,6 +25,12 @@ export type OrderFilters = {
    * `isUnassignedDelivery` for why a bare `driver == null` is the wrong set.
    */
   needsDriver: boolean;
+  /**
+   * Ops' phone calls: new orders still waiting on the customer's call, or on the
+   * restaurant's once the customer confirmed — or orders with both done. See
+   * lib/ops/order-calls.ts.
+   */
+  calls: CallFilter | '';
   range: DateRange;
 };
 
@@ -42,6 +49,7 @@ export const ORDER_PARAM_KEYS = {
   type: 'type',
   stage: 'stage',
   needsDriver: 'nodriver',
+  calls: 'calls',
   range: 'range',
   from: 'from',
   to: 'to',
@@ -62,12 +70,17 @@ function isDeliveryType(value: string | null): value is DeliveryType {
   return value === 'delivery' || value === 'pickup';
 }
 
+function isCallFilter(value: string | null): value is CallFilter {
+  return !!value && (CALL_FILTERS as readonly string[]).includes(value);
+}
+
 /** Every value here is untrusted — it came out of a URL someone may have hand-edited —
  * so each one is narrowed to a known member rather than cast. */
 export function parseOrderFilters(params: URLSearchParams): OrderFilters {
   const fieldParam = params.get(ORDER_PARAM_KEYS.field);
   const typeParam = params.get(ORDER_PARAM_KEYS.type);
   const stageParam = params.get(ORDER_PARAM_KEYS.stage);
+  const callsParam = params.get(ORDER_PARAM_KEYS.calls);
 
   return {
     query: (params.get(ORDER_PARAM_KEYS.query) ?? '').trim(),
@@ -76,6 +89,7 @@ export function parseOrderFilters(params: URLSearchParams): OrderFilters {
     type: isDeliveryType(typeParam) ? typeParam : '',
     stage: isStage(stageParam) ? stageParam : '',
     needsDriver: params.get(ORDER_PARAM_KEYS.needsDriver) === '1',
+    calls: isCallFilter(callsParam) ? callsParam : '',
     range: resolveRange(
       parsePreset(params.get(ORDER_PARAM_KEYS.range)),
       params.get(ORDER_PARAM_KEYS.from),
@@ -109,6 +123,7 @@ export function serializeOrderFilters(filters: OrderFilters, page: number): stri
   if (filters.type) params.set(ORDER_PARAM_KEYS.type, filters.type);
   if (filters.stage) params.set(ORDER_PARAM_KEYS.stage, filters.stage);
   if (filters.needsDriver) params.set(ORDER_PARAM_KEYS.needsDriver, '1');
+  if (filters.calls) params.set(ORDER_PARAM_KEYS.calls, filters.calls);
 
   if (filters.range.preset !== DEFAULT_PRESET) {
     params.set(ORDER_PARAM_KEYS.range, filters.range.preset);
@@ -146,6 +161,7 @@ export function emptyFilters(): OrderFilters {
     type: '',
     stage: '',
     needsDriver: false,
+    calls: '',
     range: resolveRange(DEFAULT_PRESET),
   };
 }
@@ -187,6 +203,7 @@ export function activeFilterCount(filters: OrderFilters, pinnedRegion = ''): num
   if (filters.type) count += 1;
   if (filters.stage) count += 1;
   if (filters.needsDriver) count += 1;
+  if (filters.calls) count += 1;
   if (filters.range.preset !== DEFAULT_PRESET) count += 1;
   return count;
 }

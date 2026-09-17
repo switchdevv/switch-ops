@@ -241,6 +241,22 @@ export async function settleQueueAfterUnassign(orderId: string): Promise<void> {
 }
 
 /**
+ * Brings the queue in line with ops cancelling an order: every row of it leaves its line.
+ * A row a console is sending this second is left to that send, which the server refuses.
+ */
+export async function settleQueueAfterCancel(orderId: string): Promise<void> {
+  const rows = await find<QueueEntry>(QUEUE, [
+    { equalTo: { key: 'order', value: pointer('Order', orderId) } },
+    { containedIn: { key: 'state', value: READ_STATES } },
+    { limit: 1000 },
+  ]);
+  const now = Date.now();
+  await Promise.all(
+    rows.filter((row) => !isBeingSent(row, now)).map((row) => markDropped(row, 'canceled')),
+  );
+}
+
+/**
  * Brings the queue in line with ops deactivating a driver.
  *
  * A deactivated account is one `assignDriver` refuses (`beforeLogin` and the assign both

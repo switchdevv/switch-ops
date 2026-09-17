@@ -2,10 +2,10 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { sendDriver } from '@/hooks/use-dispatch';
-import { canSendDriverOnConfirm, canUnassignDriver, type EditOrderParams } from '@/lib/ops/order-edit';
+import { canCancelOrder, canSendDriverOnConfirm, canUnassignDriver, type EditOrderParams } from '@/lib/ops/order-edit';
 import { DRIVER_CHANGED, NO_DRIVER_FOR_ORDER } from '@/lib/parse/errors';
 import { queryKeys } from '@/lib/query/keys';
-import { confirmOrder, editOrder, unassignDriver } from '@/lib/services/order-actions';
+import { cancelOrder, confirmOrder, editOrder, unassignDriver } from '@/lib/services/order-actions';
 import type { Order } from '@/types/order';
 
 /**
@@ -77,6 +77,26 @@ export function useUnassignDriver() {
     mutationFn: async ({ order, driverId }: UnassignRequest) => {
       if (!canUnassignDriver(order) || order.driver?.objectId !== driverId) throw new Error(DRIVER_CHANGED);
       return unassignDriver(order.objectId, driverId);
+    },
+    onSettled: invalidate,
+  });
+}
+
+export type CancelRequest = {
+  order: Pick<Order, 'objectId' | 'status' | 'canceled'>;
+  reason: string;
+  /** Push the customer and the driver — switch-dashboard's "Don't send notifications", inverted. */
+  notify: boolean;
+};
+
+/** Cancels an order with a reason; see `cancelOrder`. */
+export function useCancelOrder() {
+  const invalidate = useInvalidateOrders();
+  return useMutation({
+    mutationFn: async ({ order, reason, notify }: CancelRequest) => {
+      if (order.canceled) throw new Error('ORDER_CANCELED');
+      if (!canCancelOrder(order)) throw new Error('ORDER_FULLFILLED');
+      await cancelOrder(order.objectId, reason.trim(), notify);
     },
     onSettled: invalidate,
   });

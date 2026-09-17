@@ -3,6 +3,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query/keys';
 import {
+  countCallsDue,
   countNeedsDriver,
   listOrders,
   tallyStages,
@@ -63,6 +64,17 @@ export function useNeedsDriverCount(filters: OrderFilters, isLive: boolean, queu
   return useQuery({
     queryKey: queryKeys.orders.needsDriver(filters, queued),
     queryFn: () => countNeedsDriver(filters, queued),
+    placeholderData: keepPreviousData,
+    refetchInterval: isLive ? LIVE_INTERVAL_MS : false,
+  });
+}
+
+/** The two numbers behind the pipeline's "To call" buttons: placed orders still waiting on
+ * the customer's call, and on the restaurant's. */
+export function useCallTallies(filters: OrderFilters, isLive: boolean) {
+  return useQuery({
+    queryKey: queryKeys.orders.calls(filters),
+    queryFn: () => countCallsDue(filters),
     placeholderData: keepPreviousData,
     refetchInterval: isLive ? LIVE_INTERVAL_MS : false,
   });

@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAccess } from '@/hooks/use-access';
 import { useCities } from '@/hooks/use-cities';
 import { useNow } from '@/hooks/use-now';
-import { useNeedsDriverCount, useOrders, useStageTallies } from '@/hooks/use-orders';
+import { useCallTallies, useNeedsDriverCount, useOrders, useStageTallies } from '@/hooks/use-orders';
 import { useDispatchQueue } from '@/hooks/use-queue';
 import { pinnedRegionId } from '@/lib/auth/access';
 import { useI18n } from '@/lib/i18n/provider';
@@ -77,6 +77,7 @@ export function OrdersBoard() {
   const ordersQuery = useOrders(filters, page, isLive, filters.needsDriver ? queued : NONE);
   const talliesQuery = useStageTallies(filters, isLive);
   const needsDriverQuery = useNeedsDriverCount(filters, isLive, queued);
+  const callsQuery = useCallTallies(filters, isLive);
   const citiesQuery = useCities();
 
   const navigate = useCallback(
@@ -115,8 +116,9 @@ export function OrdersBoard() {
     void ordersQuery.refetch();
     void talliesQuery.refetch();
     void needsDriverQuery.refetch();
+    void callsQuery.refetch();
     void queueQuery.refetch();
-  }, [ordersQuery, talliesQuery, needsDriverQuery, queueQuery]);
+  }, [ordersQuery, talliesQuery, needsDriverQuery, callsQuery, queueQuery]);
 
   const total = ordersQuery.data?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / ORDER_PAGE_SIZE));
@@ -158,6 +160,11 @@ export function OrdersBoard() {
         rangeLabel={rangeLabel}
         activeStage={filters.stage}
         onSelectStage={(stage: OrderStage | '') => applyFilters({ stage })}
+        callTallies={callsQuery.data}
+        activeCalls={filters.calls}
+        // The counts ignore the stage filter, so a stage left chosen would make the list
+        // disagree with the number just pressed.
+        onSelectCalls={(calls) => applyFilters({ calls, stage: '' })}
       />
 
       <OrdersToolbar

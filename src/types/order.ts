@@ -141,6 +141,15 @@ export type Order = ParseObjectJSON & {
   duration?: number;
   options?: OrderOptions;
 
+  /**
+   * Ops' two phone calls on a new order: to the customer, to confirm it, and to the
+   * restaurant, to launch it. Written only by this console (lib/services/order-calls.ts),
+   * into columns the Parse Dashboard has to create (docs/order-calls-backend.md). Untrusted
+   * JSON — anyone could have edited it there — so read through `readCall`.
+   */
+  opsCustomerCall?: OrderCall;
+  opsRestaurantCall?: OrderCall;
+
   restaurant?: ParsePointer<'Restaurant'>;
   user?: ParsePointer<'_User'>;
   driver?: ParsePointer<'_User'>;
@@ -148,6 +157,31 @@ export type Order = ParseObjectJSON & {
   userAddress?: ParsePointer<'Address'>;
   promo?: ParsePointer<'Promo'>;
   food?: ParsePointer<'Food'>[];
+};
+
+/** What a call came to: the person agreed (the customer confirmed, the restaurant is
+ * cooking), or nobody picked up. */
+export type CallOutcome = 'done' | 'noAnswer';
+
+/** One call, as ops marked it. `byName` is copied at the time rather than included, so a
+ * row never needs the staff account's own `_User` row to say who called. */
+export type CallEntry = {
+  outcome: CallOutcome;
+  /** ISO time the call was marked. */
+  at: string;
+  /** The staff account's objectId. */
+  by: string;
+  byName: string;
+};
+
+/**
+ * A call column's value. `outcome` is the last entry's, kept beside the log because it is
+ * the one key the board's filters query (`opsCustomerCall.outcome`); `log` is every mark,
+ * oldest first, which is what "No answer ×2" and an exact Undo are read from.
+ */
+export type OrderCall = {
+  outcome: CallOutcome;
+  log: CallEntry[];
 };
 
 /**

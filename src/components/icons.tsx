@@ -232,6 +232,16 @@ export function PhoneIcon(props: IconProps) {
   );
 }
 
+/** The handset with a cross where the ringing would be — a call nobody answered. */
+export function PhoneMissedIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7.6 3.5H5.2a1.7 1.7 0 0 0-1.7 1.9c.5 4.6 2.4 8.4 5.3 11.3 2.9 2.9 6.7 4.8 11.3 5.3a1.7 1.7 0 0 0 1.9-1.7v-2.4a1.7 1.7 0 0 0-1.4-1.7l-2.6-.5a1.7 1.7 0 0 0-1.6.6l-1 1.2a13.6 13.6 0 0 1-5.4-5.4l1.2-1a1.7 1.7 0 0 0 .6-1.6l-.5-2.6a1.7 1.7 0 0 0-1.7-1.4Z" />
+      <path d="m15.5 3.5 5 5M20.5 3.5l-5 5" />
+    </Icon>
+  );
+}
+
 export function MailIcon(props: IconProps) {
   return (
     <Icon {...props}>

@@ -8,6 +8,7 @@ import { shortId } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/provider';
 import {
   isDeletionRequest,
+  isDriverMessage,
   previewOf,
   senderApps,
   senderOf,
@@ -24,7 +25,6 @@ import { supportMessageHref } from '@/lib/url/support-filters';
 import type { SupportMessage } from '@/types/message';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { CopyValue } from '@/components/ui/copy-value';
-import { Notice, type NoticeValue } from '@/components/ui/notice';
 import { StageChip } from '@/components/ui/stage-chip';
 import { DriverAvatar, Tag } from '@/components/drivers/driver-bits';
 import {
@@ -40,18 +40,23 @@ import {
   MapPinIcon,
   PhoneIcon,
   ReceiptIcon,
-  SendIcon,
   StoreIcon,
   TrashIcon,
   UserIcon,
 } from '@/components/icons';
-import { ReplyDialog } from './reply-dialog';
+import { ReplyComposer } from './reply-composer';
+import { SenderDeliveries } from './sender-deliveries';
 
 /**
  * The open message, and everything needed to answer it without leaving the page: the full
- * text, the contact details as typed, the account behind it (which apps, which region, its
- * other screens), its latest orders and its earlier messages — then reply, call, email or
- * delete.
+ * text, a box to answer in, the orders it is about, the contact details as typed, the
+ * account behind it and its earlier messages.
+ *
+ * The order of it is the work: read, look at the order, answer. A **driver's** message goes
+ * straight from the text to the deliveries they were carrying when they wrote — which is
+ * what their message is about, and what ops correct — and their orders *as a customer* sink
+ * to the bottom, where they belong for someone who is rarely a customer. Anyone else keeps
+ * the customer's own reading: their latest orders, then everything else.
  *
  * switch-dashboard showed a message as one cell of a table row, cut to the column's width,
  * with nothing about who sent it beyond an id. Answering one meant copying that id into
@@ -87,8 +92,6 @@ export function MessageReader({
   const { t, format } = useI18n();
   const query = useSupportMessage(id, pinnedRegion, fromList);
   const remove = useDeleteMessage();
-  const [notice, setNotice] = useState<NoticeValue | null>(null);
-  const [isReplying, setIsReplying] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -137,6 +140,7 @@ export function MessageReader({
   const name = message.fullname || sender?.fullname || t('common.none');
   const regionId = sender?.city?.objectId;
   const isDeletion = isDeletionRequest(message.message);
+  const isDriver = isDriverMessage(sender);
 
   return (
     <ReaderFrame
@@ -182,8 +186,6 @@ export function MessageReader({
           </div>
         </header>
 
-        {notice && <Notice notice={notice} onDismiss={() => setNotice(null)} />}
-
         {isDeletion && (
           <div className="bg-danger-soft text-danger-soft-foreground flex items-start gap-2.5 rounded-xl p-3">
             <AlertIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
@@ -202,20 +204,28 @@ export function MessageReader({
           {message.message?.trim() || <span className="text-faint italic">{t('support.list.noText')}</span>}
         </blockquote>
 
-        {/* ---- actions ---- */}
+        {/* ---- the answer ---- */}
+        {sender && apps.length > 0 ? (
+          <ReplyComposer
+            messageId={message.objectId}
+            name={name}
+            apps={apps}
+            language={sender.language}
+            pinnedRegion={pinnedRegion}
+          />
+        ) : (
+          <p className="text-caption text-faint">
+            {sender ? t('support.reply.noApps') : t('support.reply.unavailable')}
+          </p>
+        )}
+
+        {/* ---- what the message is about ---- */}
+        {isDriver && sender && (
+          <SenderDeliveries driverId={sender.objectId} messageAt={message.createdAt} pinnedRegion={pinnedRegion} />
+        )}
+
+        {/* ---- the other ways to reach them ---- */}
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="primary"
-            size="sm"
-            isDisabled={!sender || apps.length === 0}
-            onPress={() => {
-              setNotice(null);
-              setIsReplying(true);
-            }}
-          >
-            <SendIcon aria-hidden className="size-4" />
-            {t('support.reply.action')}
-          </Button>
           {message.phone && (
             <a href={`tel:${message.phone}`} className={ACTION_LINK}>
               <PhoneIcon aria-hidden className="size-4" />
@@ -242,7 +252,6 @@ export function MessageReader({
             {t('support.delete.action')}
           </Button>
         </div>
-        {!sender && <p className="text-caption text-faint -mt-3">{t('support.reply.unavailable')}</p>}
 
         {/* ---- contact & account ---- */}
         <div className="grid gap-3 sm:grid-cols-2">
@@ -320,7 +329,14 @@ export function MessageReader({
 
         {sender && (
           <>
-            <RecentOrders userId={sender.objectId} pinnedRegion={pinnedRegion} now={now} />
+            {!isDriver && (
+              <RecentOrders
+                userId={sender.objectId}
+                pinnedRegion={pinnedRegion}
+                now={now}
+                title={t('support.reader.recentOrders')}
+              />
+            )}
             <History
               userId={sender.objectId}
               currentId={message.objectId}
@@ -328,23 +344,20 @@ export function MessageReader({
               now={now}
               hrefFor={hrefFor}
             />
+            {/* A driver's orders as a customer: last, and only when there are any — one more
+                empty panel under every driver's message would be all it ever is. */}
+            {isDriver && (
+              <RecentOrders
+                userId={sender.objectId}
+                pinnedRegion={pinnedRegion}
+                now={now}
+                title={t('support.reader.customerOrders')}
+                hideWhenEmpty
+              />
+            )}
           </>
         )}
       </article>
-
-      {isReplying && sender && apps.length > 0 && (
-        <ReplyDialog
-          messageId={message.objectId}
-          name={name}
-          apps={apps}
-          pinnedRegion={pinnedRegion}
-          onClose={() => setIsReplying(false)}
-          onDone={(text) => {
-            setIsReplying(false);
-            setNotice({ kind: 'success', title: text });
-          }}
-        />
-      )}
 
       {isDeleting && (
         <ConfirmDialog
@@ -383,13 +396,21 @@ const ACTION_LINK =
 const TEXT_LINK =
   'text-caption text-link inline-flex items-center gap-1 font-bold hover:underline focus-visible:ring-focus rounded outline-none focus-visible:ring-2';
 
-/** The card the reader sits in, with Back on narrow screens (where the list is hidden). */
+/**
+ * The card the reader sits in, with Back on narrow screens (where the list is hidden).
+ *
+ * From `lg` it scrolls inside itself, under the sticky top the inbox gives it: a message
+ * with its answer box, its deliveries and its history is taller than the screen, and a
+ * sticky panel taller than the viewport can only be read by scrolling the *list* to its
+ * end — which is the opposite of how this screen is used. Two panes, each scrolling its
+ * own, is what every mail client settled on.
+ */
 function ReaderFrame({ onBack, nav, children }: { onBack: () => void; nav?: ReactNode; children: ReactNode }) {
   const { t } = useI18n();
   return (
     <section
       aria-label={t('support.reader.label')}
-      className="border-border/70 bg-surface rounded-card shadow-card flex flex-col gap-4 border p-4 sm:p-5"
+      className="border-border/70 bg-surface rounded-card shadow-card flex flex-col gap-4 border p-4 sm:p-5 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto lg:overscroll-contain"
     >
       <div className="flex items-center justify-between gap-2 lg:hidden">
         <Button variant="ghost" size="sm" onPress={onBack}>
@@ -475,15 +496,31 @@ function Fact({ icon, label, children }: { icon?: ReactNode; label?: string; chi
   );
 }
 
-function RecentOrders({ userId, pinnedRegion, now }: { userId: string; pinnedRegion: string; now: number }) {
+/** The sender's own orders — the customer's side of the account. `hideWhenEmpty` is for a
+ * driver, where this is a footnote rather than the point. */
+function RecentOrders({
+  userId,
+  pinnedRegion,
+  now,
+  title,
+  hideWhenEmpty,
+}: {
+  userId: string;
+  pinnedRegion: string;
+  now: number;
+  title: string;
+  hideWhenEmpty?: boolean;
+}) {
   const { t, format } = useI18n();
   const query = useSenderOrders(userId, pinnedRegion);
   const orders = query.data?.results ?? [];
 
+  if (hideWhenEmpty && orders.length === 0) return null;
+
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-micro text-muted font-bold tracking-[0.1em] uppercase">{t('support.reader.recentOrders')}</h3>
+        <h3 className="text-micro text-muted font-bold tracking-[0.1em] uppercase">{title}</h3>
         {(query.data?.count ?? 0) > orders.length && (
           <Link href={ordersHref('user', userId)} className={TEXT_LINK}>
             {t('support.reader.openOrders')}

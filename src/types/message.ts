@@ -16,6 +16,11 @@ export type MessageSender = ParseObjectJSON & {
   enabled?: boolean;
   city?: ParsePointer<'City'>;
   managerStore?: ParsePointer<'Restaurant'>;
+  /** The language their app is in — written by every RN app on login and from its
+   * Settings screen ('en', 'fr', 'ar', sometimes region-tagged). A reply is read on their
+   * phone, so the words this console puts around it are chosen from this; see
+   * `replyCopyFor` in lib/ops/support.ts. */
+  language?: string;
 };
 
 /**

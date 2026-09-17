@@ -2,13 +2,15 @@
 
 import { Skeleton } from '@heroui/react';
 import { useI18n } from '@/lib/i18n/provider';
+import { CALL_STEP_LABEL_KEY, CALL_STEPS, type CallFilter, type CallStep } from '@/lib/ops/order-calls';
 import {
   ORDER_STAGES,
   STAGE_COLOR_VAR,
   STAGE_LABEL_KEY,
   type OrderStage,
 } from '@/lib/ops/order-status';
-import type { StageTallies } from '@/lib/services/orders';
+import type { CallTallies, StageTallies } from '@/lib/services/orders';
+import { PhoneIcon, StoreIcon, UserIcon } from '@/components/icons';
 
 /**
  * Where the period stands, as one bar plus five numbers.
@@ -22,6 +24,10 @@ import type { StageTallies } from '@/lib/services/orders';
  * The numbers underneath are the filter. Clicking one narrows the list; clicking the
  * one already applied clears it, so a stage is a toggle rather than a trap that
  * requires finding "clear all" to escape.
+ *
+ * Beside them, the calls still to make: placed orders waiting on the customer's call, and
+ * on the restaurant's once the customer confirmed — the part of "New" ops work through by
+ * phone. The same kind of toggle.
  */
 export function PipelineBar({
   tallies,
@@ -29,12 +35,18 @@ export function PipelineBar({
   rangeLabel,
   activeStage,
   onSelectStage,
+  callTallies,
+  activeCalls,
+  onSelectCalls,
 }: {
   tallies: StageTallies | undefined;
   isPending: boolean;
   rangeLabel: string;
   activeStage: OrderStage | '';
   onSelectStage: (stage: OrderStage | '') => void;
+  callTallies: CallTallies | undefined;
+  activeCalls: CallFilter | '';
+  onSelectCalls: (calls: CallStep | '') => void;
 }) {
   const { t, tCount, format } = useI18n();
 
@@ -91,37 +103,78 @@ export function PipelineBar({
       {/* The hint is the group's accessible name rather than another line of grey
           text: the buttons already look pressable, and a second caption under a bar
           that already has one is the kind of instruction people stop reading. */}
-      <div role="group" aria-label={t('orders.pipeline.hint')} className="mt-4 flex flex-wrap gap-2">
-        {ORDER_STAGES.map((stage) => {
-          const value = tallies?.[stage];
-          const isActive = activeStage === stage;
-          return (
-            <button
-              key={stage}
-              type="button"
-              aria-pressed={isActive}
-              onClick={() => onSelectStage(isActive ? '' : stage)}
-              className={
-                'focus-visible:ring-focus flex items-center gap-2 rounded-xl border px-3 py-2 text-start transition-colors outline-none focus-visible:ring-2 ' +
-                (isActive
-                  ? 'border-accent bg-accent-soft text-accent-soft-foreground'
-                  : 'border-border/70 bg-surface-secondary/50 hover:bg-surface-tertiary')
-              }
-            >
-              <span
-                aria-hidden
-                className="size-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: STAGE_COLOR_VAR[stage] }}
-              />
-              <span className="flex flex-col leading-tight">
-                <span className="text-caption text-muted">{t(STAGE_LABEL_KEY[stage])}</span>
-                <span className="text-h6 tabular font-bold">
-                  {value === undefined ? '—' : format.number(value)}
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3">
+        <div role="group" aria-label={t('orders.pipeline.hint')} className="flex flex-wrap gap-2">
+          {ORDER_STAGES.map((stage) => {
+            const value = tallies?.[stage];
+            const isActive = activeStage === stage;
+            return (
+              <button
+                key={stage}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => onSelectStage(isActive ? '' : stage)}
+                className={
+                  'focus-visible:ring-focus flex items-center gap-2 rounded-xl border px-3 py-2 text-start transition-colors outline-none focus-visible:ring-2 ' +
+                  (isActive
+                    ? 'border-accent bg-accent-soft text-accent-soft-foreground'
+                    : 'border-border/70 bg-surface-secondary/50 hover:bg-surface-tertiary')
+                }
+              >
+                <span
+                  aria-hidden
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: STAGE_COLOR_VAR[stage] }}
+                />
+                <span className="flex flex-col leading-tight">
+                  <span className="text-caption text-muted">{t(STAGE_LABEL_KEY[stage])}</span>
+                  <span className="text-h6 tabular font-bold">
+                    {value === undefined ? '—' : format.number(value)}
+                  </span>
                 </span>
-              </span>
-            </button>
-          );
-        })}
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          role="group"
+          aria-label={t('orders.pipeline.toCallHint')}
+          className="border-separator/70 flex flex-wrap items-center gap-2 sm:border-s sm:ps-4"
+        >
+          <span className="text-micro text-muted flex items-center gap-1.5 font-bold tracking-[0.1em] uppercase">
+            <PhoneIcon aria-hidden className="size-3.5" />
+            {t('orders.pipeline.toCall')}
+          </span>
+          {CALL_STEPS.map((step) => {
+            const value = callTallies?.[step];
+            const isActive = activeCalls === step;
+            const Icon = step === 'customer' ? UserIcon : StoreIcon;
+            return (
+              <button
+                key={step}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => onSelectCalls(isActive ? '' : step)}
+                className={
+                  'focus-visible:ring-focus flex items-center gap-2 rounded-xl border px-3 py-2 text-start transition-colors outline-none focus-visible:ring-2 ' +
+                  (isActive
+                    ? 'border-accent bg-accent-soft text-accent-soft-foreground'
+                    : 'border-border/70 bg-surface-secondary/50 hover:bg-surface-tertiary')
+                }
+              >
+                {/* Amber while anyone is waiting on that call, as the chips on the rows. */}
+                <Icon aria-hidden className={'size-4 shrink-0 ' + (value ? 'text-warning' : 'text-faint')} />
+                <span className="flex flex-col leading-tight">
+                  <span className="text-caption text-muted">{t(CALL_STEP_LABEL_KEY[step])}</span>
+                  <span className="text-h6 tabular font-bold">
+                    {value === undefined ? '—' : format.number(value)}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </section>
   );

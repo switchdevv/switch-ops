@@ -4,7 +4,7 @@ import { DRIVER_CHANGED, ORDER_DELIVERED } from '@/lib/parse/errors';
 import { updateObject } from '@/lib/parse/objects';
 import { findOne } from '@/lib/parse/query';
 import { notifyDriverUnassigned } from '@/lib/services/notify';
-import { settleQueueAfterUnassign } from '@/lib/services/queue';
+import { settleQueueAfterCancel, settleQueueAfterUnassign } from '@/lib/services/queue';
 import type { Order } from '@/types/order';
 
 const ORDER = 'Order';
@@ -32,6 +32,37 @@ export async function editOrder(params: EditOrderParams): Promise<void> {
   await runFunction('editOrder', params);
 }
 
+/**
+ * Cancels an order with a reason, through the same `cancelManager` call as
+ * switch-dashboard's Cancel Order dialog (`fromAdmin: true`, so the staff "canceled by the
+ * restaurant" push isn't sent back to ops).
+ *
+ * The server sets `canceled` and, unless `notify` is false, pushes the customer's app and
+ * — when a driver has accepted it — the driver's, both with the reason as the body and the
+ * platform's cancel payload, so the driver app drops the order and goes back online. Its
+ * title is the server's own copy, "Order #… was canceled by <restaurant>", whoever
+ * cancelled. It refuses an order past status 1 with `ORDER_FULLFILLED`.
+ *
+ * The row is re-read first: the server doesn't refuse an order that is already canceled,
+ * and a second cancel from a panel a refresh behind would notify everyone twice.
+ */
+export async function cancelOrder(orderId: string, reason: string, notify: boolean): Promise<void> {
+  const row = await findOne<Pick<Order, 'objectId' | 'status' | 'canceled'>>(ORDER, [
+    { equalTo: { key: 'objectId', value: orderId } },
+    { select: ['status', 'canceled'] },
+  ]);
+  if (!row || row.canceled) throw new Error('ORDER_CANCELED');
+  if ((row.status ?? 0) > 1) throw new Error('ORDER_FULLFILLED');
+
+  await runFunction('cancelManager', { objectId: orderId, reason, noNotifs: !notify, fromAdmin: true });
+
+  // The runner would drop the order's queue rows on its next look anyway; doing it now
+  // stops a send in the meantime. Never a reason to report the cancel as failed.
+  await settleQueueAfterCancel(orderId).catch((error: unknown) => {
+    if (process.env.NODE_ENV !== 'production') console.error('[queue] after cancel', error);
+  });
+}
+
 export type UnassignResult = {
   /** Whether the driver's app was sent the push that makes it let go of the order. */
   isDriverNotified: boolean;
@@ -40,8 +71,8 @@ export type UnassignResult = {
 /**
  * Takes a driver off an order they accepted, so it needs a driver again.
  *
- * The one order change this console makes with a plain save, because no cloud function
- * does only this. `cancelDriver` — the driver app's own cancel — clears the field, but then
+ * One of the two order changes this console makes with a plain save (the other is ops' call
+ * marks, lib/services/order-calls.ts), because no cloud function does only this. `cancelDriver` — the driver app's own cancel — clears the field, but then
  * either starts `chooseDriver` (called without a reason) or pushes every staff account
  * "canceled by the driver" (with one), and neither is true of ops' decision. So the three
  * parts `cancelDriver` would do are done here instead: the row gets `driver: null`, the

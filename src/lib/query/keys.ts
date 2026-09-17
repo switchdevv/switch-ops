@@ -32,12 +32,14 @@ function listKey(filters: OrderFilters) {
     type: filters.type,
     stage: filters.stage,
     needsDriver: filters.needsDriver,
+    calls: filters.calls,
     range: rangeKey(filters),
   };
 }
 
-/** The subset the pipeline tallies and the unassigned count share — the stage and the
- * driver toggle are excluded because those two queries define their own. */
+/** The subset the pipeline tallies, the unassigned count and the calls-due counts share —
+ * the stage, the driver toggle and the calls filter are excluded because those queries
+ * define their own. */
 function scopeKey(filters: OrderFilters) {
   return {
     query: filters.query,
@@ -82,6 +84,8 @@ export const queryKeys = {
     stages: (filters: OrderFilters) => ['orders', 'stages', scopeKey(filters)] as const,
     needsDriver: (filters: OrderFilters, queued: readonly string[]) =>
       ['orders', 'needs-driver', scopeKey(filters), { queued }] as const,
+    /** How many placed orders still wait on each call — the pipeline's "To call" numbers. */
+    calls: (filters: OrderFilters) => ['orders', 'calls', scopeKey(filters)] as const,
     /** One customer's orders and their tallies, on the Customers page. Under `orders` so an
      * order action taken there (confirm, edit, unassign) re-reads them with the board. */
     customer: (userId: string, page: number, region: string) =>
@@ -190,6 +194,10 @@ export const queryKeys = {
     detail: (id: string, region: string) => ['support', 'detail', id, { region }] as const,
     history: (userId: string, region: string) => ['support', 'history', userId, { region }] as const,
     orders: (userId: string, region: string) => ['support', 'orders', userId, { region }] as const,
+    /** A driver's deliveries up to the moment of one message — `before` is part of the key
+     * because the read is anchored there, not on now. */
+    deliveries: (driverId: string, before: string, region: string) =>
+      ['support', 'deliveries', driverId, { before, region }] as const,
   },
   /**
    * Restaurant managers. Built like `drivers`: the list is keyed by region alone and filtered

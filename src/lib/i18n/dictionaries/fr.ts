@@ -35,9 +35,10 @@ export const fr: Dictionary = {
   },
 
   support: {
-    eyebrow: 'Service client',
+    eyebrow: 'Messages',
     title: 'Support',
-    subtitle: "Les messages envoyés depuis l'écran Support des applications client, livreur et restaurant.",
+    subtitle:
+      "Ce que les livreurs, les clients et les restaurants écrivent depuis l'écran Support de leur application — et où les ops leur répondent.",
 
     apps: {
       food: 'Client',
@@ -80,13 +81,13 @@ export const fr: Dictionary = {
       unread: 'Non lu',
       deletionRequest: 'Suppression de compte',
       noText: 'Aucun texte',
-      keyboardHint: 'Astuce : J et K passent d’un message à l’autre.',
+      keyboardHint: 'Astuce : J et K passent d’un message à l’autre, R va à la réponse.',
     },
 
     reader: {
       label: 'Message',
       placeholderTitle: 'Choisissez un message',
-      placeholderBody: "Son texte complet, l'expéditeur et ses dernières commandes s'ouvrent ici.",
+      placeholderBody: "Son texte complet, une zone pour répondre et les commandes derrière lui s'ouvrent ici.",
       back: 'Retour à la boîte',
       previous: 'Message plus récent',
       next: 'Message plus ancien',
@@ -119,8 +120,16 @@ export const fr: Dictionary = {
       openRestaurant: 'Son restaurant',
       openOrders: 'Toutes ses commandes',
       recentOrders: 'Commandes récentes',
+      customerOrders: 'Ses propres commandes',
       noOrders: 'Aucune commande de ce compte.',
       ordersError: 'Impossible de charger ses commandes.',
+      deliveries: 'Ses livraisons',
+      deliveriesHint:
+        'Ses commandes jusqu’au moment où il a écrit, la plus récente en premier — celle du haut est en général celle dont il parle.',
+      allDeliveries: 'Toutes ses livraisons',
+      noDeliveries: 'Aucune livraison passée avant ce message.',
+      placedBefore: '{span} avant',
+      orderSaved: '#{order} enregistrée.',
       history: 'Messages précédents',
       historyEmpty: 'Seul message de ce compte.',
       historyMore: 'Les {count} derniers sont affichés.',
@@ -131,20 +140,17 @@ export const fr: Dictionary = {
     },
 
     reply: {
-      action: 'Répondre par notification',
-      title: 'Répondre à {name}',
-      hint: 'Envoyée comme notification sur son téléphone. Il ne peut pas y répondre — pour en discuter, appelez-le.',
+      label: 'Répondre à {name}',
+      placeholder: 'Répondre à {name}…',
       unavailable: "Les réponses vont au compte de l'expéditeur, qui n'existe plus ou ne peut pas être lu.",
+      noApps: "Aucune application Switch enregistrée sur ce compte : il n'y a nulle part où envoyer une réponse.",
       app: 'Envoyer à',
-      appHint: 'Ce compte utilise plusieurs applications Switch. Choisissez celle depuis laquelle il a écrit, si vous la connaissez.',
-      messageTitle: 'Titre',
-      defaultTitle: 'Support Switch',
-      body: 'Message',
-      send: 'Envoyer la réponse',
+      lands: 'Arrive dans son application {app}, avec un bouton Répondre.',
+      keyHint: 'Entrée envoie, Maj+Entrée ajoute une ligne.',
+      send: 'Envoyer',
       sending: 'Envoi…',
-      sent: 'Réponse envoyée à {name}.',
+      sent: 'Envoyé à {time} :',
       errors: {
-        title: "Donnez-lui un titre, jusqu'à 60 caractères.",
         body: "Écrivez la réponse, jusqu'à 300 caractères.",
       },
     },
@@ -290,6 +296,7 @@ export const fr: Dictionary = {
     noDriverForOrder:
       "Impossible d'envoyer un livreur sur cette commande — c'est un retrait client, ou un livreur l'a déjà.",
     driverChanged: 'Le livreur de cette commande a changé entre-temps — vérifiez-la à nouveau.',
+    orderCollected: 'Le livreur a déjà récupéré cette commande, elle ne peut plus être annulée.',
     orderDelivered: 'Cette commande a déjà été livrée.',
     restaurantChanged: 'Ce magasin a été modifié depuis un autre écran entre-temps — vérifiez-le à nouveau.',
     managerTaken: 'Ce compte gère déjà un autre magasin. Retirez-le de celui-ci d’abord.',
@@ -322,6 +329,9 @@ export const fr: Dictionary = {
     accessUnavailable:
       "Les changements d'accès ne sont pas encore activés sur le serveur — demandez à l'équipe plateforme de déployer `setOpsAccess`.",
     accessForbidden: 'Seuls les admins peuvent modifier les accès.',
+    callChanged: 'Cet appel a été modifié depuis un autre écran entre-temps — vérifiez-le à nouveau.',
+    callsMissing:
+      "Le suivi des appels n'est pas encore configuré sur le serveur — les colonnes opsCustomerCall et opsRestaurantCall doivent être ajoutées à Order dans le Parse Dashboard.",
   },
 
   common: {
@@ -370,6 +380,11 @@ export const fr: Dictionary = {
       anyStage: 'Toutes les étapes',
       regionLocked: 'Votre région attribuée — les commandes hors de celle-ci ne sont pas affichées.',
       unassignedOnly: 'À affecter',
+      calls: 'Appels',
+      anyCalls: 'Tous les appels',
+      callsCustomer: 'Client à appeler',
+      callsRestaurant: 'Restaurant à appeler',
+      callsDone: 'Deux appels faits',
       reset: 'Tout effacer',
       active_one: '{count} filtre actif',
       active_other: '{count} filtres actifs',
@@ -394,7 +409,9 @@ export const fr: Dictionary = {
       caption_other: '{count} commandes sur {range}',
       empty: 'Aucune commande sur cette période.',
       hint: 'Choisissez une étape pour filtrer la liste.',
-      partial: "Les compteurs suivent les filtres ci-dessus, sauf l'étape et le livreur.",
+      partial: "Les compteurs suivent les filtres ci-dessus, sauf l'étape, le livreur et les appels.",
+      toCall: 'À appeler',
+      toCallHint: "Nouvelles commandes en attente d'un appel. Choisissez-en un pour les lister.",
     },
 
     alert: {
@@ -508,10 +525,72 @@ export const fr: Dictionary = {
       unassignedNotNotified: "{driver} est retiré de #{order}, mais son application n'a pas pu être prévenue",
       unassignedCallDriver: "Appelez le livreur pour qu'il arrête la course.",
       unassignFailed: 'Impossible de retirer le livreur',
+      callsMissing: {
+        customer: "L'appel au client n'est pas encore marqué comme confirmé.",
+        restaurant: "L'appel au restaurant n'est pas encore marqué comme lancé.",
+        both: "Aucun des deux appels n'est encore marqué — ni le client, ni le restaurant.",
+      },
+      cancelOrder: 'Annuler la commande',
+      cancelTitle: 'Annuler #{order} de {restaurant} ?',
+      cancelHint: "Impossible de revenir en arrière d'ici. La commande quitte le travail en cours et toute file de livreur.",
+      cancelReason: 'Raison',
+      cancelReasonPlaceholder: "Le restaurant n'a plus ce plat",
+      cancelReasonRequired: 'Indiquez une raison — le client la lit dans la notification.',
+      cancelNotify: 'Envoyer les notifications push',
+      cancelNotifyCustomer: 'Le client reçoit « La commande #… a été annulée par le restaurant », avec la raison.',
+      cancelNotifyDriver: "Le client et {driver} reçoivent « La commande #… a été annulée par le restaurant », avec la raison — son application abandonne la commande.",
+      cancelSilent: "Personne n'est prévenu. Un livreur qui l'a la garde sur son téléphone — appelez-le.",
+      cancelConfirm: 'Annuler #{order}',
+      canceling: 'Annulation…',
+      keepOrder: 'Garder la commande',
+      canceled: '#{order} annulée — le client a été prévenu.',
+      canceledQuietly: '#{order} annulée, sans notification.',
+      cancelFailed: "Impossible d'annuler la commande",
       edit: 'Modifier statut et prix',
       saved: 'Modifications de #{order} enregistrées.',
       cancel: 'Annuler',
       dismiss: 'Fermer',
+    },
+
+    calls: {
+      heading: 'Appels',
+      step: {
+        customer: 'Client',
+        restaurant: 'Restaurant',
+      },
+      chip: {
+        customer: 'Appel client : {state}',
+        restaurant: 'Appel restaurant : {state}',
+      },
+      state: {
+        todo: 'Pas encore appelé',
+        due: 'À appeler',
+      },
+      done: {
+        customer: 'Confirmé',
+        restaurant: 'Lancé',
+      },
+      missed_one: 'Pas de réponse',
+      missed_other: 'Pas de réponse ×{count}',
+      afterMissed_one: 'après {count} appel sans réponse',
+      afterMissed_other: 'après {count} appels sans réponse',
+      lastTry: 'Dernier essai {time}',
+      ask: {
+        customer: 'Le client a-t-il confirmé la commande ?',
+        restaurant: 'Le restaurant a-t-il lancé la commande ?',
+      },
+      mark: {
+        customer: 'Confirmé',
+        restaurant: 'Lancé',
+        noAnswer: 'Pas de réponse',
+      },
+      customerFirst: "Le client n'a pas encore confirmé.",
+      earlier: 'Avant',
+      undo: 'Annuler',
+      undoLabel: 'Annuler « {mark} » de {time}',
+      readyToConfirm: 'Les deux appels sont faits — confirmez la commande.',
+      failed: "Impossible d'enregistrer l'appel",
+      undoFailed: "Impossible d'annuler la marque",
     },
 
     edit: {

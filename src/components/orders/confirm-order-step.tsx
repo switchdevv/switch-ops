@@ -7,12 +7,14 @@ import { useNow } from '@/hooks/use-now';
 import { useDispatchQueue } from '@/hooks/use-queue';
 import { shortId } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/provider';
+import type { MessageKey } from '@/lib/i18n/dictionary';
 import { buildDispatchModel, rankDrivers, toLatLng } from '@/lib/ops/dispatch';
+import { callsNotDone } from '@/lib/ops/order-calls';
 import { canSendDriverOnConfirm } from '@/lib/ops/order-edit';
 import { parseErrorKey } from '@/lib/parse/errors';
 import type { OrderRow } from '@/types/order';
 import { PickupBadge } from '@/components/ui/pickup-badge';
-import { QueueIcon, SignalOffIcon } from '@/components/icons';
+import { AlertIcon, QueueIcon, SignalOffIcon } from '@/components/icons';
 
 /**
  * The question Confirm asks before it goes, on the board and on the map alike.
@@ -29,7 +31,15 @@ import { QueueIcon, SignalOffIcon } from '@/components/icons';
 
 export type ConfirmableOrder = Pick<
   OrderRow,
-  'objectId' | 'status' | 'canceled' | 'deliveryType' | 'restaurant' | 'city' | 'driver'
+  | 'objectId'
+  | 'status'
+  | 'canceled'
+  | 'deliveryType'
+  | 'restaurant'
+  | 'city'
+  | 'driver'
+  | 'opsCustomerCall'
+  | 'opsRestaurantCall'
 >;
 
 /** The driver ops chose, named so the feedback can say who went. */
@@ -54,6 +64,17 @@ export function ConfirmOrderStep({
 }) {
   const { t } = useI18n();
   const isPickup = order.deliveryType !== 'delivery';
+  const callsLeft = callsNotDone(order);
+  // Said, not enforced: a restaurant on the manager app needs no call, and ops may have
+  // rung without marking it. But confirming is the step the calls exist to come before.
+  const callsLeftKey: MessageKey | null =
+    callsLeft.length === 2
+      ? 'orders.actions.callsMissing.both'
+      : callsLeft[0] === 'customer'
+        ? 'orders.actions.callsMissing.customer'
+        : callsLeft[0] === 'restaurant'
+          ? 'orders.actions.callsMissing.restaurant'
+          : null;
 
   return (
     <div className="border-border/70 bg-surface flex flex-col gap-3 rounded-xl border p-3">
@@ -69,6 +90,13 @@ export function ConfirmOrderStep({
         </div>
         <p className="text-caption text-muted">{t('orders.actions.confirmHint')}</p>
       </div>
+
+      {callsLeftKey && (
+        <p className="text-caption bg-warning-soft text-warning-soft-foreground flex items-start gap-2 rounded-lg px-2.5 py-2 font-bold">
+          <AlertIcon aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+          {t(callsLeftKey)}
+        </p>
+      )}
 
       {isPickup ? (
         <>

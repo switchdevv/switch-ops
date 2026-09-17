@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { Button } from '@heroui/react';
 import { useI18n } from '@/lib/i18n/provider';
 import type { MessageKey } from '@/lib/i18n/dictionary';
+import { CALL_FILTERS, type CallFilter } from '@/lib/ops/order-calls';
 import { ORDER_STAGES, STAGE_LABEL_KEY } from '@/lib/ops/order-status';
 import { RANGE_PRESETS, resolveRange, todayIso, type RangePreset } from '@/lib/ops/date-range';
 import { activeFilterCount, SEARCH_FIELDS, type OrderFilters, type SearchField } from '@/lib/url/order-filters';
@@ -19,6 +20,12 @@ const RANGE_LABEL_KEY: Record<RangePreset, MessageKey> = {
   month: 'orders.range.month',
   all: 'orders.range.all',
   custom: 'orders.range.custom',
+};
+
+const CALL_FILTER_LABEL_KEY: Record<CallFilter, MessageKey> = {
+  customer: 'orders.filters.callsCustomer',
+  restaurant: 'orders.filters.callsRestaurant',
+  done: 'orders.filters.callsDone',
 };
 
 const SEARCH_FIELD_LABEL_KEY: Record<SearchField, MessageKey> = {
@@ -93,6 +100,11 @@ export function OrdersToolbar({
   const stageOptions: SelectOption[] = [
     { value: '', label: t('orders.filters.anyStage') },
     ...ORDER_STAGES.map((stage) => ({ value: stage, label: t(STAGE_LABEL_KEY[stage]) })),
+  ];
+
+  const callOptions: SelectOption[] = [
+    { value: '', label: t('orders.filters.anyCalls') },
+    ...CALL_FILTERS.map((calls) => ({ value: calls, label: t(CALL_FILTER_LABEL_KEY[calls]) })),
   ];
 
   return (
@@ -224,6 +236,13 @@ export function OrdersToolbar({
             options={stageOptions}
             onChange={(value) => onChange({ stage: value as OrderFilters['stage'] })}
             className="w-40"
+          />
+          <SelectField
+            label={t('orders.filters.calls')}
+            value={filters.calls}
+            options={callOptions}
+            onChange={(value) => onChange({ calls: value as OrderFilters['calls'] })}
+            className="w-48"
           />
 
           <label className="border-border/70 bg-surface-secondary/50 hover:bg-surface-tertiary flex h-9 cursor-pointer items-center gap-2 rounded-xl border px-3 transition-colors">

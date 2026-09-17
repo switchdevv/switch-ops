@@ -36,9 +36,10 @@ export const en = {
   },
 
   support: {
-    eyebrow: 'Customer care',
+    eyebrow: 'Messages',
     title: 'Support',
-    subtitle: 'Messages sent from the Support screen of the customer, driver and restaurant apps.',
+    subtitle:
+      'What drivers, customers and restaurants write from the Support screen of their app — and where ops answer them.',
 
     apps: {
       food: 'Customer',
@@ -81,13 +82,13 @@ export const en = {
       unread: 'Unread',
       deletionRequest: 'Account deletion',
       noText: 'No text',
-      keyboardHint: 'Tip: J and K move between messages.',
+      keyboardHint: 'Tip: J and K move between messages, R jumps to the reply box.',
     },
 
     reader: {
       label: 'Message',
       placeholderTitle: 'Pick a message',
-      placeholderBody: 'Its full text, the sender and their recent orders open here.',
+      placeholderBody: 'Its full text, a box to answer in, and the orders behind it open here.',
       back: 'Back to inbox',
       previous: 'Newer message',
       next: 'Older message',
@@ -120,8 +121,16 @@ export const en = {
       openRestaurant: 'Their restaurant',
       openOrders: 'All their orders',
       recentOrders: 'Recent orders',
+      customerOrders: 'Their own orders',
       noOrders: 'No orders from this account.',
       ordersError: "Couldn't load their orders.",
+      deliveries: 'Their deliveries',
+      deliveriesHint:
+        'Their orders up to the moment they wrote, newest first — the top one is usually the one they were on.',
+      allDeliveries: 'All their deliveries',
+      noDeliveries: 'No delivery placed before this message.',
+      placedBefore: '{span} before',
+      orderSaved: '#{order} saved.',
       history: 'Earlier messages',
       historyEmpty: 'This is the only message from this account.',
       historyMore: 'Showing the latest {count}.',
@@ -132,20 +141,17 @@ export const en = {
     },
 
     reply: {
-      action: 'Reply by notification',
-      title: 'Reply to {name}',
-      hint: "Sent as a push notification to their phone. They can't answer it — to talk it through, call them.",
+      label: 'Reply to {name}',
+      placeholder: 'Reply to {name}…',
       unavailable: "Replies go to the sender's account, which is gone or can't be read.",
+      noApps: 'This account has no Switch app on record, so there is nowhere to send a reply.',
       app: 'Send to',
-      appHint: 'This account uses more than one Switch app. Pick the one they wrote from, if you know it.',
-      messageTitle: 'Title',
-      defaultTitle: 'Switch support',
-      body: 'Message',
-      send: 'Send reply',
+      lands: 'Lands in their {app} app with a Reply button.',
+      keyHint: 'Enter sends, Shift+Enter adds a line.',
+      send: 'Send',
       sending: 'Sending…',
-      sent: 'Reply sent to {name}.',
+      sent: 'Sent {time}:',
       errors: {
-        title: 'Give it a title, up to 60 characters.',
         body: 'Write the reply, up to 300 characters.',
       },
     },
@@ -289,6 +295,7 @@ export const en = {
     queueSending: "It's being sent to a driver right now — try again in a moment.",
     noDriverForOrder: "This order can't be sent a driver — it's a pickup, or a driver already has it.",
     driverChanged: "This order's driver has changed since it was loaded — check it again.",
+    orderCollected: 'The driver has already collected this order, so it can no longer be canceled.',
     orderDelivered: 'This order has already been delivered.',
     restaurantChanged: 'This restaurant was changed from another screen in the meantime — check it again.',
     managerTaken: 'That account already manages another restaurant. Remove it there first.',
@@ -321,6 +328,9 @@ export const en = {
     accessUnavailable:
       "Access changes aren't enabled on the server yet — ask the platform team to deploy `setOpsAccess`.",
     accessForbidden: 'Only admins can change access.',
+    callChanged: 'This call was marked from another screen in the meantime — check it again.',
+    callsMissing:
+      "Call tracking isn't set up on the server yet — the opsCustomerCall and opsRestaurantCall columns have to be added to Order in the Parse Dashboard.",
   },
 
   common: {
@@ -369,6 +379,11 @@ export const en = {
       anyStage: 'Any stage',
       regionLocked: 'Your assigned region — orders outside it are not shown.',
       unassignedOnly: 'Needs a driver',
+      calls: 'Calls',
+      anyCalls: 'Any calls',
+      callsCustomer: 'Customer to call',
+      callsRestaurant: 'Restaurant to call',
+      callsDone: 'Both calls done',
       reset: 'Clear all',
       active_one: '{count} filter active',
       active_other: '{count} filters active',
@@ -393,7 +408,9 @@ export const en = {
       caption_other: '{count} orders in {range}',
       empty: 'Nothing placed in this period.',
       hint: 'Pick a stage to filter the list.',
-      partial: 'Counts follow the filters above, except the stage and driver ones.',
+      partial: 'Counts follow the filters above, except the stage, driver and calls ones.',
+      toCall: 'To call',
+      toCallHint: 'New orders waiting on a call. Pick one to list them.',
     },
 
     alert: {
@@ -507,10 +524,72 @@ export const en = {
       unassignedNotNotified: "{driver} is off #{order}, but their app couldn't be told",
       unassignedCallDriver: 'Call the driver so they stop the delivery.',
       unassignFailed: "Couldn't unassign the driver",
+      callsMissing: {
+        customer: "The customer's call isn't marked as confirmed yet.",
+        restaurant: "The restaurant's call isn't marked as launched yet.",
+        both: "Neither call is marked yet — the customer's and the restaurant's.",
+      },
+      cancelOrder: 'Cancel order',
+      cancelTitle: 'Cancel #{order} from {restaurant}?',
+      cancelHint: "It can't be undone from here. The order leaves the board's open work and any driver queue.",
+      cancelReason: 'Reason',
+      cancelReasonPlaceholder: 'The restaurant is out of this dish',
+      cancelReasonRequired: 'Give a reason — the customer reads it in the notification.',
+      cancelNotify: 'Send push notifications',
+      cancelNotifyCustomer: 'The customer gets “Order #… was canceled by the restaurant”, with the reason.',
+      cancelNotifyDriver: 'The customer and {driver} get “Order #… was canceled by the restaurant”, with the reason — their app drops the order.',
+      cancelSilent: "Nobody is told. A driver who has it keeps it on their phone — call them.",
+      cancelConfirm: 'Cancel #{order}',
+      canceling: 'Canceling…',
+      keepOrder: 'Keep order',
+      canceled: '#{order} canceled — the customer has been notified.',
+      canceledQuietly: '#{order} canceled, without notifications.',
+      cancelFailed: "Couldn't cancel the order",
       edit: 'Edit status & prices',
       saved: 'Changes to #{order} saved.',
       cancel: 'Cancel',
       dismiss: 'Dismiss',
+    },
+
+    calls: {
+      heading: 'Calls',
+      step: {
+        customer: 'Customer',
+        restaurant: 'Restaurant',
+      },
+      chip: {
+        customer: 'Customer call: {state}',
+        restaurant: 'Restaurant call: {state}',
+      },
+      state: {
+        todo: 'Not called yet',
+        due: 'To call',
+      },
+      done: {
+        customer: 'Confirmed',
+        restaurant: 'Launched',
+      },
+      missed_one: 'No answer',
+      missed_other: 'No answer ×{count}',
+      afterMissed_one: 'after {count} unanswered call',
+      afterMissed_other: 'after {count} unanswered calls',
+      lastTry: 'Last try {time}',
+      ask: {
+        customer: 'Did the customer confirm the order?',
+        restaurant: 'Has the restaurant started on it?',
+      },
+      mark: {
+        customer: 'Confirmed',
+        restaurant: 'Launched',
+        noAnswer: 'No answer',
+      },
+      customerFirst: "The customer hasn't confirmed yet.",
+      earlier: 'Earlier',
+      undo: 'Undo',
+      undoLabel: 'Take back “{mark}” from {time}',
+      readyToConfirm: 'Both calls are done — confirm the order.',
+      failed: "Couldn't save the call",
+      undoFailed: "Couldn't take the mark back",
     },
 
     edit: {

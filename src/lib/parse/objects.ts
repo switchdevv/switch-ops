@@ -8,8 +8,9 @@ import { getParse } from './client';
  * The dispatch queue writes this way: `DispatchQueue` is this console's own class with
  * nothing behind it, so a save is the whole operation. Everything ops does *to an order*
  * goes through a cloud function (see cloud.ts), because those functions do more than write
- * the row — with one exception, unassigning a driver, which no function does on its own
- * (see `unassignDriver` in lib/services/order-actions.ts).
+ * the row — with two exceptions no function covers: unassigning a driver (see
+ * `unassignDriver` in lib/services/order-actions.ts), and ops' own call marks, which live in
+ * two columns nothing else reads (see lib/services/order-calls.ts).
  *
  * These go through the SDK's REST controller rather than `Parse.Object#save`, for one
  * reason: the claim counter. After an `increment`, `save()` reports a value either way —

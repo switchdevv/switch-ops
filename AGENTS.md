@@ -48,13 +48,35 @@ switch-food / switch-driver / switch-manager, switch-dashboard and switch-financ
 - **Ops can unassign a driver** from a delivery they accepted and haven't delivered
   (`canUnassignDriver`), on the board's detail and the map's alike. No cloud function
   does only that — `cancelDriver` either starts `chooseDriver` or pushes all staff
-  "canceled by the driver" — so it is the one order change made as a plain save:
+  "canceled by the driver" — so it is one of the two order changes made as a plain save:
   `driver: null` on the row (the `Order` CLP grants update to `role:Staff`), then every
   queue row for the order is dropped (`unassigned`), then the driver is sent the
   platform's cancel push (`cancel` + `id`) through `sendPush`, which makes the driver app
   `hideOrder` it and go back online. If that push can't be sent, the console says to call
   the driver. Status and customer are left alone. Call in
   `lib/services/order-actions.ts`.
+- **Ops mark their two calls on a new order** — most restaurants don't run the manager app,
+  so ops call the **customer** to confirm the order, then the **restaurant** to launch it,
+  then Confirm. Each call is marked **done** (Confirmed / Launched) or **no answer**, with who
+  and when, and the last mark can be taken back. They live on the order in two Object
+  columns, `opsCustomerCall` and `opsRestaurantCall`, which **must be added in the Parse
+  Dashboard** (`addField` on `Order` is master-key only; `docs/order-calls-backend.md`). Until
+  then a mark fails with "not set up on the server yet", while every placed order reads as not
+  called. The other plain save on an order (`Order` has no triggers, and no app writes it,
+  so nobody is notified): the column is re-read first, so done is never marked twice and an
+  Undo can't take back a newer mark (`CALL_CHANGED`). Taking the only mark back deletes the
+  column rather than nulling it. A column is `{ outcome, log[] }`, and `outcome` is what the
+  filters query (`opsCustomerCall.outcome`, a dotted key) and what the chips show, so the two
+  agree. Only a **placed** order has a call due: the customer's first, then the restaurant's
+  (`nextCallDue`). Calls can be marked until the food leaves (status ≤ 1). They show as two
+  chips on every board row (a popover per call; their own column from `xl`), as two cards in
+  the order's detail on the board and the map (compact chips once the order is confirmed),
+  and as marks on the map's rows. The board filters on them (`?calls=customer|restaurant|done`,
+  composed after needs-a-driver's status bound), and the pipeline counts both calls still due.
+  **Marking the restaurant's call done on a placed order opens the Confirm step** — from a
+  row's chip it opens the row first. The step warns about calls not marked but doesn't
+  require them. Rules in `lib/ops/order-calls.ts`, I/O in `lib/services/order-calls.ts`, UI in
+  `components/orders/order-calls.tsx`.
 - **A pickup never gets a driver.** The customer collects it. The server's `assignDriver`
   does not check `deliveryType` (and clears `canceled` on whatever it is given), so every
   assign path here checks `isUnassignedDelivery` first. Pickups carry the ink
@@ -162,6 +184,38 @@ switch-food / switch-driver / switch-manager, switch-dashboard and switch-financ
   staff account's region before each. Account-deletion requests are recognised by the text
   switch-food's Settings prefills. The included `_User` is narrowed at the boundary. Rules in
   `lib/ops/support.ts`, I/O in `lib/services/support.ts`.
+- **Support is how ops and drivers talk while a delivery runs**, and the screen is built
+  around that: a driver writes what the order really came to ("1600", "he added a dish"),
+  ops correct the order and say so. What follows from it:
+  - **An account is read as one role, work apps first.** `SENDER_APPS` is ordered
+    `driver, manager, food` and `senderAppOf` takes the first the account holds — nearly
+    every driver has also ordered dinner, so a row saying "Customer · Driver" said nothing
+    about anybody. That order decides the list row's label, the reader's first tag and the
+    app a reply is sent to.
+  - **A driver's message is read beside their deliveries** (`listSenderDeliveries`,
+    `components/support/sender-deliveries.tsx`): their orders up to the message's own
+    `createdAt`, newest first, with the money on each and the gap to the message. Anchored
+    on the message rather than on now, so it reads the same an hour later — and it claims
+    nothing about *which* order was in hand, because `Order` carries no accepted-at,
+    collected-at or delivered-at column and `updatedAt` moves on the very edit ops are about
+    to make. **Edit opens the board's own dialog in place** (`EditOrderDialog` is exported
+    from `components/orders/order-actions.tsx` for this), because correcting a total is what
+    the message is asking for. Their orders *as a customer* sit last and disappear when
+    there are none.
+  - **Replying is a box under the message**, not a dialog (`reply-composer.tsx`): Enter
+    sends, `R` jumps to it, and the three answers ops send all evening fill the box rather
+    than sending — a push cannot be taken back. The push carries `screen: 'Support'` and a
+    `button`, which all three apps turn into a card button that opens their own Support
+    form, so the answer comes back as the next `Message`. That title, that button and those
+    quick answers are in the **recipient's** language (`replyCopyFor`, from `_User.language`
+    — 'ar' as often as not), never the console's, for the same reason the driver pushes in
+    `lib/services/notify.ts` keep their own copy table. Nothing records what was sent: a push
+    leaves no trace on the message and no other console can see it, so the composer shows
+    only the last reply sent from this screen. A shared thread would need a class of its own
+    on the server.
+  - From `lg` the reader **scrolls inside itself** under its sticky top: with an answer box,
+    deliveries and history it is taller than the screen, and a sticky panel taller than the
+    viewport can only be read by scrolling the list to its end.
 - **Ops are told when support writes** — the console raises the alert itself. There is no
   web push here: the server sends every staff push (orders *and* support) to the single
   `_User.pushToken.staff` slot that switch-dashboard writes on each load, so ops would take

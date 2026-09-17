@@ -1,4 +1,5 @@
 import { count, findWithCount, pointer, type PageResult, type QueryParam } from '@/lib/parse/query';
+import { isDueFilter, outcomeKey, type CallFilter, type CallStep } from '@/lib/ops/order-calls';
 import { ORDER_STAGES, STAGE_STATUS, type OrderStage } from '@/lib/ops/order-status';
 import type { OrderFilters } from '@/lib/url/order-filters';
 import type { OrderRow } from '@/types/order';
@@ -30,9 +31,9 @@ const INCLUDES: QueryParam[] = [
  * The constraints shared by the list and by every pipeline tally: the search, the
  * region, the fulfilment type and the date window.
  *
- * Deliberately *not* including the stage or the needs-a-driver toggle — the pipeline
- * counts one stage each, and would count nothing if the caller's own stage filter were
- * already applied.
+ * Deliberately *not* including the stage, the needs-a-driver toggle or the calls filter —
+ * the pipeline counts one stage each, and would count nothing if the caller's own stage
+ * filter were already applied.
  */
 function baseParams(filters: OrderFilters): QueryParam[] {
   const { query, field, region, type, range } = filters;
@@ -104,6 +105,41 @@ const STILL_OPEN: QueryParam[] = [
   { lessThan: { key: 'status', value: 3 } },
 ];
 
+/** Placed and not canceled — the only orders a call is still due on (see `nextCallDue`). */
+const PLACED: QueryParam[] = [
+  { equalTo: { key: 'canceled', value: false } },
+  { equalTo: { key: 'status', value: STAGE_STATUS.new } },
+];
+
+/**
+ * The calls filter, on the call columns alone (lib/ops/order-calls.ts).
+ *
+ * "Not done" is `notEqualTo`, which also matches an order whose column was never written —
+ * never called — and every order while the column doesn't exist on the server yet. Nothing
+ * here asks for the column's presence, for that reason. The customer comes first: the
+ * restaurant's call is due only once the customer confirmed.
+ */
+function callMarkParams(calls: CallFilter | ''): QueryParam[] {
+  const customer = outcomeKey('customer');
+  const restaurant = outcomeKey('restaurant');
+  switch (calls) {
+    case 'customer':
+      return [{ notEqualTo: { key: customer, value: 'done' } }];
+    case 'restaurant':
+      return [
+        { equalTo: { key: customer, value: 'done' } },
+        { notEqualTo: { key: restaurant, value: 'done' } },
+      ];
+    case 'done':
+      return [
+        { equalTo: { key: customer, value: 'done' } },
+        { equalTo: { key: restaurant, value: 'done' } },
+      ];
+    default:
+      return [];
+  }
+}
+
 /**
  * Composed by hand rather than concatenated, because two of these constrain the same
  * columns and Parse's `equalTo` *overwrites* rather than intersecting — a second
@@ -120,6 +156,11 @@ function listParams(filters: OrderFilters, queued: readonly string[]): QueryPara
     params.push(...NO_DRIVER, notQueued(queued));
     if (!filters.stage) params.push(...STILL_OPEN);
   }
+  params.push(...callMarkParams(filters.calls));
+  // A call still due is a placed order's — unless a stage was chosen, which owns `canceled`
+  // and `status` as it does for the driver toggle. After STILL_OPEN on purpose: this
+  // `equalTo` replaces its `lessThan` on `status`, and placed is the narrower of the two.
+  if (isDueFilter(filters.calls) && !filters.stage) params.push(...PLACED);
   params.push(...stageParams(filters.stage));
   return params;
 }
@@ -187,4 +228,20 @@ export function countNeedsDriver(filters: OrderFilters, queued: readonly string[
     notQueued(queued),
     ...STILL_OPEN,
   ]);
+}
+
+export type CallTallies = Record<CallStep, number>;
+
+/**
+ * How many placed orders still wait on each call — the customer's, then the restaurant's
+ * once the customer confirmed — for the current search, region, type and dates. Two counts
+ * beside the pipeline's five, for the same reason those are counts.
+ */
+export async function countCallsDue(filters: OrderFilters): Promise<CallTallies> {
+  const base = [...baseParams(filters), ...PLACED];
+  const [customer, restaurant] = await Promise.all([
+    count(COLLECTION, [...base, ...callMarkParams('customer')]),
+    count(COLLECTION, [...base, ...callMarkParams('restaurant')]),
+  ]);
+  return { customer, restaurant };
 }

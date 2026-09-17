@@ -9,14 +9,19 @@ import type { MessageKey } from '@/lib/i18n/dictionary';
  * `dispatch` is a write: assigning a driver from the live map. `queue` is the driver
  * queue — lining an order up behind a busy driver, and the runner that sends it later.
  * `order` is a change to the order itself: confirming it, editing its status and prices, or
- * taking its driver off it. `catalogue` is a change to a restaurant, a menu or a dish.
+ * taking its driver off it. `cancel` is cancelling an order. `catalogue` is a change to a restaurant, a menu or a dish.
  * `drivers` is a change to a driver account: adding, editing, activating or deactivating
  * one, resetting its password, or sending it a message. `customers` is the same for a
  * customer account, plus deleting one. `managers` is the same for a manager account, plus
  * giving it a restaurant or taking it off one. `access` is an admin granting or revoking a
- * staff account's Ops access on /access.
+ * staff account's Ops access on /access. `calls` is marking the customer or restaurant
+ * call on an order, or taking a mark back.
  */
-export type ErrorContext = 'login' | 'fetch' | 'dispatch' | 'queue' | 'order' | 'catalogue' | 'drivers' | 'customers' | 'managers' | 'support' | 'access';
+export type ErrorContext = 'login' | 'fetch' | 'dispatch' | 'queue' | 'order' | 'cancel' | 'calls' | 'catalogue' | 'drivers' | 'customers' | 'managers' | 'support' | 'access';
+
+/** Thrown before marking a call, or taking a mark back, when the call is no longer as ops
+ * saw it — marked or taken back from another console in the meantime. `calls` context. */
+export const CALL_CHANGED = 'CALL_CHANGED';
 
 /** Thrown before deleting or answering a support message that is gone, or whose sender is
  * outside a staff account's region — one answer for both. `support` context. */
@@ -133,6 +138,12 @@ export function parseErrorKey(error: unknown, context: ErrorContext): MessageKey
     if (message === 'ORDER_FULLFILLED') return 'errors.orderTaken';
   }
 
+  // `cancelManager`'s refusal of an order whose food has left the restaurant.
+  if (context === 'cancel') {
+    if (message === 'ORDER_CANCELED') return 'errors.orderCanceled';
+    if (message === 'ORDER_FULLFILLED') return 'errors.orderCollected';
+  }
+
   // `acceptManager` uses the same two words, meaning something narrower: canceled, or no
   // longer at status 0 — accepted by the restaurant, most likely, since the panel loaded.
   if (context === 'order') {
@@ -156,6 +167,16 @@ export function parseErrorKey(error: unknown, context: ErrorContext): MessageKey
     const code = getErrorCode(error);
     // 101 on a write is Parse's answer to a row whose ACL leaves this account out.
     if (code === 101 || code === 119) return 'errors.queueForbidden';
+  }
+
+  // Call marks are a plain save onto two `Order` columns the Parse Dashboard has to add
+  // (docs/order-calls-backend.md). Until they exist, the save asks Parse to add a column,
+  // which `Order` leaves to the master key: 119, "Permission denied for action addField".
+  // That is setup still to do, not a permission this person lacks.
+  if (context === 'calls') {
+    if (message === CALL_CHANGED) return 'errors.callChanged';
+    if (message === 'ORDER_CANCELED') return 'errors.orderCanceled';
+    if (message?.includes('addField')) return 'errors.callsMissing';
   }
 
   // The catalogue writes: restaurants, menus, dishes and their pictures.

@@ -36,9 +36,12 @@ import { OrderBasket, OrderPayment } from './order-contents';
 export function OrderDetail({
   order,
   currency,
+  confirmRequest,
 }: {
   order: OrderRow;
   currency: CurrencyCode | undefined;
+  /** Opens the Confirm step — see `OrderActions`. */
+  confirmRequest?: number;
 }) {
   const { t } = useI18n();
   const options = order.options;
@@ -47,7 +50,7 @@ export function OrderDetail({
   return (
     <div className="border-separator/70 bg-surface-secondary/40 flex flex-col gap-4 border-t p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <OrderActions order={order} className="min-w-0 flex-1" />
+        <OrderActions order={order} confirmRequest={confirmRequest} className="min-w-0 flex-1" />
         {/* Only while the order is still moving: the live map holds open orders, and a link
             that lands on "not on the map any more" teaches people not to trust the link. */}
         {isOpen(order) && (

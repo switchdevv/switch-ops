@@ -8,6 +8,7 @@ import {
   deleteMessage,
   getMessage,
   listMessages,
+  listSenderDeliveries,
   listSenderMessages,
   listSenderOrders,
   replyToMessage,
@@ -88,12 +89,29 @@ export function useSenderMessages(userId: string, pinnedRegion: string) {
   });
 }
 
-export function useSenderOrders(userId: string, pinnedRegion: string) {
+export function useSenderOrders(userId: string, pinnedRegion: string, isEnabled = true) {
   return useQuery({
     queryKey: queryKeys.support.orders(userId, pinnedRegion),
     queryFn: () => listSenderOrders(userId, pinnedRegion),
-    enabled: userId.length > 0,
+    enabled: isEnabled && userId.length > 0,
     staleTime: 60_000,
+  });
+}
+
+/**
+ * The driver's deliveries up to the moment of the open message.
+ *
+ * Not on the inbox's timer: the set is fixed by `before`, and the states inside it move at
+ * the pace of a delivery. Coming back to the tab re-reads it (the client's
+ * `refetchOnWindowFocus`), and an edit made from the reader re-reads it by hand — which is
+ * what a dispatcher correcting a total is waiting to see.
+ */
+export function useSenderDeliveries(driverId: string, before: string, pinnedRegion: string, isEnabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.deliveries(driverId, before, pinnedRegion),
+    queryFn: () => listSenderDeliveries(driverId, before, pinnedRegion),
+    enabled: isEnabled && driverId.length > 0 && before.length > 0,
+    staleTime: 30_000,
   });
 }
 
@@ -110,7 +128,7 @@ export function useDeleteMessage() {
 /** A push changes nothing the inbox reads, so nothing is re-read after it. */
 export function useReplyToMessage() {
   return useMutation({
-    mutationFn: (reply: { id: string; app: SenderApp; title: string; body: string; pinnedRegion: string }) =>
-      replyToMessage(reply.id, reply.app, reply.title, reply.body, reply.pinnedRegion),
+    mutationFn: (reply: { id: string; app: SenderApp; body: string; pinnedRegion: string }) =>
+      replyToMessage(reply.id, reply.app, reply.body, reply.pinnedRegion),
   });
 }

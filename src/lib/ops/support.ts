@@ -7,11 +7,19 @@ import type { MessageSender, SupportMessage } from '@/types/message';
  */
 
 /**
- * The apps with a Support screen that saves a `Message`: switch-food, switch-driver and
- * switch-manager. Their `APP_TYPE` constants are what each writes into `_User.appType` on
+ * The apps with a Support screen that saves a `Message`: switch-driver, switch-manager and
+ * switch-food. Their `APP_TYPE` constants are what each writes into `_User.appType` on
  * login, and what `sendPush` takes to pick the app's push token.
+ *
+ * Listed work apps first, and that order is the one thing about this inbox that is not
+ * alphabetical by accident. An account holds every app it has signed into, so a driver who
+ * has also ordered dinner carries both 'driver' and 'food' — and on this platform support
+ * is how ops and drivers talk while a delivery is running ("the total is 1600", "he added
+ * a dish"), so a driver writes as a driver and only rarely as a customer. Taking the first
+ * app in this order as the one they wrote from is what makes the inbox label them Driver,
+ * show their deliveries under the message, and answer into the driver app by default.
  */
-export const SENDER_APPS = ['food', 'driver', 'manager'] as const;
+export const SENDER_APPS = ['driver', 'manager', 'food'] as const;
 
 export type SenderApp = (typeof SENDER_APPS)[number];
 
@@ -34,11 +42,22 @@ export function senderOf(message: Pick<SupportMessage, 'user'>): MessageSender |
  *
  * A message doesn't record the app it was written in, and one account can hold several —
  * a driver who also orders food carries both 'driver' and 'food' — so this is every app it
- * *could* have come from, in `SENDER_APPS` order.
+ * *could* have come from, in `SENDER_APPS` order: the likeliest first.
  */
 export function senderApps(sender: Pick<MessageSender, 'appType'> | null): SenderApp[] {
   const types = sender?.appType ?? [];
   return SENDER_APPS.filter((app) => types.includes(app));
+}
+
+/** The app a message is read as coming from — the first of `senderApps` — or null for an
+ * account with none of the three (or none that can be read). */
+export function senderAppOf(sender: Pick<MessageSender, 'appType'> | null): SenderApp | null {
+  return senderApps(sender)[0] ?? null;
+}
+
+/** Whether this message is a driver's, which is what the reader shows deliveries for. */
+export function isDriverMessage(sender: Pick<MessageSender, 'appType'> | null): boolean {
+  return senderAppOf(sender) === 'driver';
 }
 
 /**
@@ -76,22 +95,84 @@ export function previewOf(text: string | undefined, max = PREVIEW_CHARS): string
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }
 
-/** The limits of a push reply. FCM itself allows more, but a notification is read on a lock
+/** The limit of a push reply. FCM itself allows more, but a notification is read on a lock
  * screen, where anything past a few lines is cut. */
-export const REPLY_TITLE_MAX = 60;
 export const REPLY_BODY_MAX = 300;
 
-export type ReplyValidation =
-  | { ok: true; title: string; body: string }
-  | { ok: false; field: 'title' | 'body' };
+export type ReplyValidation = { ok: true; body: string } | { ok: false };
 
-export function validateReply(title: string, body: string): ReplyValidation {
-  const cleanTitle = title.trim();
-  const cleanBody = body.trim();
-  if (!cleanTitle || cleanTitle.length > REPLY_TITLE_MAX) return { ok: false, field: 'title' };
-  if (!cleanBody || cleanBody.length > REPLY_BODY_MAX) return { ok: false, field: 'body' };
-  return { ok: true, title: cleanTitle, body: cleanBody };
+export function validateReply(body: string): ReplyValidation {
+  const clean = body.trim();
+  if (!clean || clean.length > REPLY_BODY_MAX) return { ok: false };
+  return { ok: true, body: clean };
 }
+
+/**
+ * The words around a reply that ops don't type, in the language the sender's app is in.
+ *
+ * Not in lib/i18n: those dictionaries are this console's own UI, typed off `en.ts` and
+ * shipping en + fr (see lib/i18n/locales.ts). This text is read on a phone, in *their*
+ * language — as likely to be Arabic as anything else. Same reasoning, and the same shape,
+ * as the driver pushes in lib/services/notify.ts; the platform's own pushes do it too
+ * (switch-server cloud/localization/translations.json).
+ *
+ * - `title` heads the card each app shows for a push.
+ * - `button` is what turns that card into a conversation: with `screen` beside it, all
+ *   three apps' `showMessage` give the card a button, and this one opens their own Support
+ *   screen — where the answer comes back as the next `Message`.
+ * - `quickReplies` are the answers ops send twenty times an evening. Pressing one *fills
+ *   the box* rather than sending, so what goes out is always what was on screen. Drivers
+ *   and customers get their own set from `QUICK_REPLIES_BY_APP` instead.
+ */
+export type ReplyCopy = { title: string; button: string; quickReplies: readonly string[] };
+
+const REPLY_COPY: Record<'en' | 'fr' | 'ar', ReplyCopy> = {
+  en: {
+    title: 'Switch support',
+    button: 'Reply',
+    quickReplies: ['Done ✅', 'OK 👍', 'Please call us 📞'],
+  },
+  fr: {
+    title: 'Support Switch',
+    button: 'Répondre',
+    quickReplies: ["C'est fait ✅", 'OK 👍', 'Appelez-nous svp 📞'],
+  },
+  ar: {
+    title: 'دعم Switch',
+    button: 'رد',
+    quickReplies: ['تم ✅', 'حسنا 👍', 'اتصل بنا من فضلك 📞'],
+  },
+};
+
+/**
+ * The quick answers for a reply going to the driver or customer app, whatever language
+ * that app is in: ops write to them in Darja, the way these calls actually go. The
+ * restaurant app keeps its language's `quickReplies`.
+ */
+export const QUICK_REPLIES_BY_APP: Partial<Record<SenderApp, readonly string[]>> = {
+  driver: ['عيطلي، ما حكمتكش', 'ماهيش تصونيلك', 'راك مديكونكتي'],
+  food: ['من فضلك، الليفرار وصل وما حكمكش، إتصل بنا', 'من فضلك، تيليفونك مغلق، إتصل بنا'],
+};
+
+export function quickRepliesFor(app: SenderApp, language: string | undefined): readonly string[] {
+  return QUICK_REPLIES_BY_APP[app] ?? replyCopyFor(language).quickReplies;
+}
+
+/** `_User.language` as the apps write it — a row may carry 'ar-DZ', which normalises to
+ * 'ar', and an account that has never opened Settings may carry nothing at all. */
+export function replyCopyFor(language: string | undefined): ReplyCopy {
+  const tag = (language ?? '').slice(0, 2).toLowerCase();
+  return tag === 'fr' || tag === 'ar' ? REPLY_COPY[tag] : REPLY_COPY.en;
+}
+
+/**
+ * How far back a delivery is still described by the gap to the message ("18 min before")
+ * rather than by its own date.
+ *
+ * Twelve hours is a shift: past it, "14 h before" says nothing a dispatcher can use, and
+ * the day and the time do.
+ */
+export const RELATIVE_GAP_MAX_MS = 12 * 60 * 60 * 1000;
 
 /**
  * Which messages an account has opened on this browser — see hooks/use-support-read-marks.ts

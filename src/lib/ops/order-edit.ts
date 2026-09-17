@@ -51,6 +51,21 @@ export function canUnassignDriver(
   return Boolean(order.driver?.objectId);
 }
 
+/**
+ * Whether ops can cancel this order through `cancelManager`, as switch-dashboard does.
+ *
+ * Not once the food has left the restaurant: the server refuses any status above 1 with
+ * `ORDER_FULLFILLED` (switch-server cloud/order/manager.js), whatever the dashboard's own
+ * button lets through. A canceled order isn't refused there, but a second cancel would
+ * push the customer and the driver all over again.
+ */
+export function canCancelOrder(order: Pick<Order, 'status' | 'canceled'>): boolean {
+  return !order.canceled && (order.status ?? 0) <= 1;
+}
+
+/** The longest reason ops can give — it is the body of a push notification. */
+export const CANCEL_REASON_MAX = 200;
+
 /** Every status the edit offers — all four, for either fulfilment type, as on the
  * dashboard. Their labels depend on `deliveryType`; see `statusLabelKey`. */
 export const ORDER_STATUSES = [0, 1, 2, 3] as const;
