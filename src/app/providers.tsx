@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { ThemeProvider as NextThemesProvider } from 'next-themes';
 import { I18nProvider } from '@/lib/i18n/provider';
 import { makeQueryClient } from '@/lib/query/client';
+import { ServiceWorker } from '@/components/service-worker';
 
 export function Providers({ children }: { children: ReactNode }) {
   // Created via useState(() => ...), never as a module-level singleton: the App Router
@@ -27,6 +28,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <I18nProvider>{children}</I18nProvider>
         <ReactQueryDevtools initialIsOpen={false} />
+        <ServiceWorker />
       </QueryClientProvider>
     </NextThemesProvider>
   );

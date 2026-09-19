@@ -111,6 +111,12 @@ export function parseErrorKey(error: unknown, context: ErrorContext): MessageKey
   // accompanies them is the generic 141.
   const message = getErrorMessage(error);
 
+  // Ahead of every context: neither is an answer from the server, so no context's own
+  // vocabulary applies — and the support one below would read a fetch failure's text as a
+  // missing push token.
+  if (isTimeoutError(error)) return 'errors.timeout';
+  if (isFetchFailure(error)) return 'errors.network';
+
   // The support inbox, ahead of the login strings: `sendPush` also answers
   // USER_DOES_NOT_EXISTS, for a sender whose account is gone. It reads `pushToken[appType]`
   // off a row that may have no `pushToken` at all, which is a TypeError on the server and a
@@ -276,6 +282,41 @@ export function parseErrorKey(error: unknown, context: ErrorContext): MessageKey
 export function isAuthError(error: unknown): boolean {
   const code = getErrorCode(error);
   return code === 101 || code === 119 || code === 209;
+}
+
+/** The session token is no longer valid on the server (revoked by a password reset, or
+ * expired) — nothing but signing in again fixes it. */
+export function isSessionExpired(error: unknown): boolean {
+  return getErrorCode(error) === 209;
+}
+
+/**
+ * A request that ran out its deadline (lib/parse/deadline.ts) — or one the server itself
+ * gave up on, which Parse reports with the same code (124, `Parse.Error.TIMEOUT`).
+ *
+ * Not a refusal: for a write, the server may well have done it. The copy says so.
+ */
+export function isTimeoutError(error: unknown): boolean {
+  return getErrorCode(error) === 124;
+}
+
+/**
+ * The browser couldn't send the request at all. The SDK wraps the `fetch` TypeError in a
+ * `Parse.Error` with no code (RESTController.js `handleError`), keeping only the browser's
+ * sentence — which differs by engine: Chrome's "Failed to fetch", Safari's "Load failed",
+ * Firefox's "NetworkError when attempting to fetch resource.".
+ */
+export function isFetchFailure(error: unknown): boolean {
+  if (getErrorCode(error) !== undefined && getErrorCode(error) !== 100) return false;
+  return /failed to fetch|load failed|networkerror|network request failed|unable to connect/i.test(
+    getErrorMessage(error) ?? '',
+  );
+}
+
+/** Worth one more try but not two: nothing came back, and on a connection or a server in
+ * that state a second immediate attempt mostly adds load. */
+export function isTransientError(error: unknown): boolean {
+  return isTimeoutError(error) || isFetchFailure(error);
 }
 
 function getErrorCode(error: unknown): number | undefined {

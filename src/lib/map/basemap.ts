@@ -35,6 +35,9 @@ const STYLE_URL: Record<MapTheme, string> = {
   dark: 'https://tiles.openfreemap.org/styles/dark',
 };
 
+/** How long the basemap style may take before the map shows its error card. */
+const BASEMAP_TIMEOUT_MS = 8_000;
+
 const styleRequests = new Map<MapTheme, Promise<StyleSpecification>>();
 
 /** The raw style JSON, fetched once per theme per page load. Theme switches are instant
@@ -44,7 +47,10 @@ function fetchStyle(theme: MapTheme): Promise<StyleSpecification> {
   const pending = styleRequests.get(theme);
   if (pending) return pending;
 
-  const request = fetch(STYLE_URL[theme]).then(async (response) => {
+  // A deadline, like every Parse request (lib/parse/deadline.ts): a tile CDN that never
+  // answers would otherwise hold the map on "Loading" with no Retry, since only a failure
+  // reaches the error card.
+  const request = fetch(STYLE_URL[theme], { signal: AbortSignal.timeout(BASEMAP_TIMEOUT_MS) }).then(async (response) => {
     if (!response.ok) throw new Error(`Basemap style "${theme}" answered HTTP ${response.status}`);
     return (await response.json()) as StyleSpecification;
   });

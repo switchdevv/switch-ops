@@ -1,17 +1,20 @@
 'use client';
 
+import { useCallback } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ReadMarks, SenderApp } from '@/lib/ops/support';
 import { queryKeys } from '@/lib/query/keys';
 import {
-  countUnread,
   deleteMessage,
   getMessage,
   listMessages,
   listSenderDeliveries,
   listSenderMessages,
   listSenderOrders,
+  listUnread,
   replyToMessage,
+  unreadNow,
+  type UnreadSnapshot,
 } from '@/lib/services/support';
 import type { SupportFilters } from '@/lib/url/support-filters';
 import type { SupportMessage } from '@/types/message';
@@ -61,11 +64,22 @@ export function useSupportUnreadCount(
   isEnabled = true,
   intervalMs = SUPPORT_INTERVAL_MS,
 ) {
+  // The key follows `since` only (see `queryKeys.support.unread`); the ids opened since the
+  // last read come off in `select`, which re-runs when the marks change — no request.
+  const select = useCallback((snapshot: UnreadSnapshot) => unreadNow(snapshot, marks), [marks]);
+  // `marks.ids` is left out of the key on purpose — see above.
+  // eslint-disable-next-line @tanstack/query/exhaustive-deps
   return useQuery({
-    queryKey: queryKeys.support.unread(filters, marks),
-    queryFn: () => countUnread(filters, marks),
+    queryKey: queryKeys.support.unread(filters, marks.since),
+    queryFn: () => listUnread(filters, marks),
+    select,
     placeholderData: keepPreviousData,
     refetchInterval: isLive ? intervalMs : false,
+    // Arrivals invalidate it from the alert runner (components/support-alerts.tsx), so the
+    // timer is only a backstop — and a focus refetch would be a duplicate. It stays fresh
+    // for as long as its own interval says it does.
+    staleTime: intervalMs,
+    refetchOnWindowFocus: false,
     enabled: isEnabled && marks.since > 0,
   });
 }

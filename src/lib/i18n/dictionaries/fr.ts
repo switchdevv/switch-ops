@@ -220,6 +220,15 @@ export const fr: Dictionary = {
     noRegionBody:
       "Ops montre au personnel les commandes de sa propre région, et ce compte n'en a aucune. Demandez à un admin de définir votre région dans le tableau de bord.",
     tryAgain: 'Réessayer',
+    slowTitle: 'Le chargement prend plus de temps que prévu',
+    slowBody: "Le serveur n'a pas encore répondu. C'est peut-être la connexion — réessayez, ou déconnectez-vous puis reconnectez-vous.",
+  },
+
+  crash: {
+    title: 'Cet écran ne répond plus',
+    body: "Une erreur s'est produite à l'affichage. Rien n'a été perdu sur le serveur — réessayez, ou rechargez la console.",
+    tryAgain: 'Réessayer',
+    reload: 'Recharger',
   },
 
   account: {
@@ -273,6 +282,7 @@ export const fr: Dictionary = {
 
   errors: {
     network: 'Serveur injoignable. Vérifiez votre connexion et réessayez.',
+    timeout: "Le serveur n'a pas répondu à temps. L'action a peut-être abouti — vérifiez avant de réessayer.",
     badCredentials: 'Mot de passe incorrect.',
     usernameUnknown: "Aucun compte avec cet identifiant.",
     notStaff: "Ce compte n'a pas d'accès personnel.",

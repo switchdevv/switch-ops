@@ -98,6 +98,9 @@ export const queryKeys = {
     all: ['dispatch'] as const,
     orders: (region: string) => ['dispatch', 'orders', { region }] as const,
     drivers: (region: string) => ['dispatch', 'drivers', { region }] as const,
+    /** The open order's basket and promo, read on their own (see `getOrderContents`). Under
+     * `dispatch` so whatever refreshes the map refreshes it too. */
+    contents: (orderId: string) => ['dispatch', 'contents', orderId] as const,
   },
   /** The driver queue (`DispatchQueue`), read by the map and the board alike. */
   queue: {
@@ -184,12 +187,15 @@ export const queryKeys = {
         page,
         marks,
       ] as const,
-    unread: (filters: SupportFilters, marks: { since: number; ids: readonly string[] }) =>
+    /** Keyed on the read marks' `since` alone, not their ids: a message opened is taken off
+     * the number in the browser (`unreadNow`), rather than re-asking a server query that, for
+     * a staff account, carries the region sub-query. */
+    unread: (filters: SupportFilters, since: number) =>
       [
         'support',
         'unread',
         { ...filters, unread: false, range: { preset: filters.range.preset, from: filters.range.from, to: filters.range.to } },
-        marks,
+        { since },
       ] as const,
     detail: (id: string, region: string) => ['support', 'detail', id, { region }] as const,
     history: (userId: string, region: string) => ['support', 'history', userId, { region }] as const,

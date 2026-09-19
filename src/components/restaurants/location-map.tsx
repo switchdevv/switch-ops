@@ -48,6 +48,8 @@ export default function LocationMap({ value, onChange, regionOutline, theme, loc
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [retries, setRetries] = useState(0);
+  /** Bumped by Retry when the map itself couldn't be built (no WebGL) — see DispatchMap. */
+  const [buildAttempt, setBuildAttempt] = useState(0);
 
   const onChangeRef = useRef(onChange);
   const initialThemeRef = useRef(theme);
@@ -72,18 +74,26 @@ export default function LocationMap({ value, onChange, regionOutline, theme, loc
     ensureRtlText();
 
     const start = initialValueRef.current ?? FALLBACK_CENTER;
-    const instance = new MapLibreMap({
-      container,
-      style: blankStyle(initialThemeRef.current),
-      center: [start.lng, start.lat],
-      zoom: initialValueRef.current ? PIN_ZOOM : 11,
-      attributionControl: { compact: true },
-      dragRotate: false,
-      pitchWithRotate: false,
-      touchPitch: false,
-      maxPitch: 0,
-      renderWorldCopies: false,
-    });
+    // Throws without WebGL; the form must stay usable (the coordinates can be typed).
+    let instance: MapLibreMap;
+    try {
+      instance = new MapLibreMap({
+        container,
+        style: blankStyle(initialThemeRef.current),
+        center: [start.lng, start.lat],
+        zoom: initialValueRef.current ? PIN_ZOOM : 11,
+        attributionControl: { compact: true },
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
+        maxPitch: 0,
+        renderWorldCopies: false,
+      });
+    } catch (error) {
+      console.error('[location-map] could not create the map', error);
+      queueMicrotask(() => setStatus('error'));
+      return;
+    }
     instance.touchZoomRotate.disableRotation();
 
     let cancelled = false;
@@ -98,7 +108,7 @@ export default function LocationMap({ value, onChange, regionOutline, theme, loc
       observer.disconnect();
       instance.remove();
     };
-  }, []);
+  }, [buildAttempt]);
 
   useEffect(() => {
     if (!map) return;
@@ -207,7 +217,8 @@ export default function LocationMap({ value, onChange, regionOutline, theme, loc
             size="sm"
             onPress={() => {
               setStatus('loading');
-              setRetries((count) => count + 1);
+              if (map) setRetries((count) => count + 1);
+              else setBuildAttempt((count) => count + 1);
             }}
           >
             {t('dispatch.map.retry')}

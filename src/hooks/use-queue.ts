@@ -34,11 +34,30 @@ export function useDispatchQueue(region: string, isLive: boolean) {
   });
 }
 
-/** Everything a queue change can move: the lines, the map's orders, the board's counts. */
+/** Everything a queue change can move: the lines, the map's orders, the board's counts. For
+ * a change a person just made on this screen. */
 export function invalidateQueue(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.queue.all });
   void queryClient.invalidateQueries({ queryKey: queryKeys.dispatch.all });
   void queryClient.invalidateQueries({ queryKey: queryKeys.orders.all });
+}
+
+/**
+ * What the queue runner refreshes after a look that changed something — in the tab that
+ * looked and, through the broadcast, in every other tab of the browser. That can be every
+ * five seconds on a busy evening, so it is kept to what shows the queue:
+ *
+ * - **Not the board** (`orders.all`): that is nine requests per board tab per look. The
+ *   board re-reads on its own 20 s clock, and when a line gains or loses an order its key
+ *   changes with the queue anyway (`queryKeys.orders.list` / `needsDriver` carry `queued`).
+ * - **`cancelRefetch: false`**: a read already under way is joined, not restarted.
+ *   Cancelling never stopped the HTTP request (the Parse call doesn't take React Query's
+ *   signal) — it only sent a second, identical one to a server already slow enough for the
+ *   first to still be running.
+ */
+export function invalidateQueueFromRunner(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.queue.all }, { cancelRefetch: false });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.dispatch.all }, { cancelRefetch: false });
 }
 
 /** Lines an order up behind a driver, or moves it to their line. Settled rather than

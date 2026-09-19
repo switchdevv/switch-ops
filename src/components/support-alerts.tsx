@@ -140,8 +140,10 @@ export function SupportAlerts() {
      * events that arrive together would each ask for one. */
     let isStealing = false;
 
+    // Joined, not restarted, when a read is already under way — see
+    // `invalidateQueueFromRunner` in hooks/use-queue.ts for why restarting only doubles it.
     const refreshBell = () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.support.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.support.all }, { cancelRefetch: false });
     };
 
     if (channel) {

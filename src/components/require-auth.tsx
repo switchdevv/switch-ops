@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@heroui/react';
-import { useSession } from '@/hooks/use-session';
+import { useLogout, useSession } from '@/hooks/use-session';
 import { useAccess } from '@/hooks/use-access';
 import { useI18n } from '@/lib/i18n/provider';
-import { parseErrorKey } from '@/lib/parse/errors';
+import { isSessionExpired, parseErrorKey } from '@/lib/parse/errors';
 import { FullPageLoader } from './full-page-loader';
 import { NotAuthorized } from './not-authorized';
 
@@ -39,12 +39,24 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     }
   }, [isPending, user, pathname, router]);
 
-  if (isPending || !user || access.isPending) {
-    return <FullPageLoader />;
+  // A session the server no longer honours (a password reset revokes every one) can't be
+  // fixed by trying again, so don't offer that: sign out, which lands on /login. Once.
+  const { mutate: signOut } = useLogout();
+  const isDeadSession = access.isError && isSessionExpired(access.error);
+  const hasSignedOut = useRef(false);
+  useEffect(() => {
+    if (!isDeadSession || hasSignedOut.current) return;
+    hasSignedOut.current = true;
+    signOut();
+  }, [isDeadSession, signOut]);
+
+  if (isPending || !user || access.isPending || isDeadSession) {
+    return <FullPageLoader onRetry={user ? access.refetch : undefined} canSignOut={!!user} />;
   }
 
   // A failed check is not a denial. The access row is read over the network, so this
-  // branch is a dropped connection or a CLP change — telling someone they have no
+  // branch — reached only when no row was ever confirmed on this browser (see
+  // hooks/use-access.ts) — is a dropped connection or a CLP change — telling someone they have no
   // access when the truth is "we couldn't ask" sends them to an admin for a problem an
   // admin can't fix. Offer the retry instead.
   if (access.isError) {

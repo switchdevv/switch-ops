@@ -3,7 +3,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAccess } from '@/hooks/use-access';
-import { invalidateQueue } from '@/hooks/use-queue';
+import { invalidateQueueFromRunner } from '@/hooks/use-queue';
 import { pinnedRegionId } from '@/lib/auth/access';
 import type { MessageKey } from '@/lib/i18n/dictionary';
 import { QUEUE_TICK_MS, RUNNER_STALL_MS, TICK_TIMEOUT_MS } from '@/lib/ops/queue';
@@ -129,7 +129,7 @@ export function QueueRunner() {
         // The leader's own looks reach its own inbox too, and it has already applied them.
         if (lookNow) return;
         setStatus({ lastTickAt: message.at, errorKey: message.errorKey });
-        if (message.changed) invalidateQueue(queryClient);
+        if (message.changed) invalidateQueueFromRunner(queryClient);
       };
     }
 
@@ -162,7 +162,7 @@ export function QueueRunner() {
           let errorKey: MessageKey | null = null;
           try {
             ({ changed } = await runQueueTick(region, current.controller.signal));
-            if (changed) invalidateQueue(queryClient);
+            if (changed) invalidateQueueFromRunner(queryClient);
           } catch (error) {
             errorKey = parseErrorKey(error, 'queue');
           }

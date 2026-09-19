@@ -221,6 +221,15 @@ export const en = {
     noRegionBody:
       'Ops shows staff the orders in their own region, and this account has none. Ask an admin to set your region on the staff dashboard.',
     tryAgain: 'Try again',
+    slowTitle: 'This is taking longer than usual',
+    slowBody: "The server hasn't answered yet. It may be the connection — try again, or sign out and back in.",
+  },
+
+  crash: {
+    title: 'This screen stopped working',
+    body: 'Something went wrong while showing it. Nothing you did was lost on the server — try again, or reload the console.',
+    tryAgain: 'Try again',
+    reload: 'Reload',
   },
 
   account: {
@@ -274,6 +283,7 @@ export const en = {
 
   errors: {
     network: "Can't reach the server. Check your connection and try again.",
+    timeout: "The server didn't answer in time. It may still have gone through — check before trying again.",
     badCredentials: 'Wrong password.',
     usernameUnknown: 'No account with that username.',
     notStaff: "This account doesn't have staff access.",

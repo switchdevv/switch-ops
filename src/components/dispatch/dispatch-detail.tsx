@@ -2,9 +2,10 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { Button } from '@heroui/react';
+import { Button, Skeleton } from '@heroui/react';
 import { useQueueRunnerStatus } from '@/components/queue-runner';
-import { useNow } from '@/hooks/use-now';
+import { useOrderContents } from '@/hooks/use-dispatch';
+import { useSecondClock } from '@/hooks/use-now';
 import { initials, shortId, splitPhones } from '@/lib/format';
 import { useI18n } from '@/lib/i18n/provider';
 import { basketSize, readBasket } from '@/lib/ops/basket';
@@ -161,6 +162,7 @@ function OrderDetail({
 
   const driver = order.driverId ? model.driversById.get(order.driverId) : undefined;
   const items = basketSize(readBasket(row));
+  const contents = useOrderContents(order.id);
   const trip = order.pickup && order.dropoff ? distanceMeters(order.pickup, order.dropoff) : null;
   const canAssign = isAssignable(order);
   const isPickup = row.deliveryType !== 'delivery';
@@ -331,11 +333,21 @@ function OrderDetail({
           panel is for, and a fifteen-line basket above the Assign buttons would push them
           off the screen. The total and item count are already in the header. */}
       <Panel title={t('orders.detail.basket')}>
-        <OrderBasket order={row} currency={currency} />
+        {/* Read for this order alone (the map's list leaves dishes out). Until it lands, a
+            skeleton rather than lines with no names; if it can't be read, the lines the
+            row has, quantities and prices included. */}
+        {contents.isPending ? (
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-9 w-full rounded-xl" />
+            <Skeleton className="h-9 w-full rounded-xl" />
+          </div>
+        ) : (
+          <OrderBasket order={contents.data ?? row} currency={currency} />
+        )}
       </Panel>
 
       <Panel title={t('orders.detail.payment')}>
-        <OrderPayment order={row} currency={currency} />
+        <OrderPayment order={contents.data ?? row} currency={currency} />
       </Panel>
 
       <BoardLink href={ordersHref('objectId', order.id)} label={t('dispatch.detail.openInOrders')} />
@@ -741,7 +753,7 @@ function PhaseBadge({ order, hint }: { order: DispatchOrder; hint?: ReactNode })
  */
 function QueueWaitHint({ order, model }: { order: DispatchOrder; model: DispatchModel }) {
   const { t } = useI18n();
-  const now = useNow(1000);
+  const now = useSecondClock();
   const slot = order.queue;
   const driver = slot ? model.driversById.get(slot.driverId) : undefined;
   const fallback = <span className="text-micro text-faint">{t(PHASE_HINT_KEY[order.phase])}</span>;
@@ -1084,7 +1096,7 @@ function SendStatusLine({
   sendAgain?: { isArmed: boolean; onPress: () => void };
 }) {
   const { t, tCount, format } = useI18n();
-  const now = useNow(1000);
+  const now = useSecondClock();
   const runner = useQueueRunnerStatus();
 
   const hold = driver ? lineHoldOf(driver, now) : null;

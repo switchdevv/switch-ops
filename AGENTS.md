@@ -16,6 +16,29 @@ switch-food / switch-driver / switch-manager, switch-dashboard and switch-financ
 - **Parse is browser-only** (`src/lib/parse/client.ts` is `client-only`). There is no
   server-side data fetching, no API routes, no middleware, no dynamic `[param]` segments —
   the app is a Next static export (`output: 'export'`) on Firebase Hosting.
+- **Nothing may wait forever.** The console used to sit blank or on a spinner for as long as
+  a phone's connection stayed bad, so:
+  - Every Parse request has a deadline, installed once on the SDK's REST controller
+    (`src/lib/parse/deadline.ts`): 15 s reads, 45 s writes (longer than the queue's 30 s
+    claim, so a timed-out assign can't be sent twice), 120 s uploads, 8 s sign-out. A
+    timeout is a `Parse.Error` 124 → `errors.timeout`. Don't bypass it with raw `fetch` to
+    Parse, and never let an *aborted* Parse request through: the SDK resolves it as an empty
+    result, not an error.
+  - React Query runs with `networkMode: 'always'` (nothing is ever `paused`) and retries a
+    timeout once.
+  - The start-up gate opens from the last verified access row cached in this browser
+    (`src/lib/auth/access-cache.ts`, 24 h) and re-reads it straight away; a failed re-check
+    never replaces a working console. `FullPageLoader` offers Retry / Sign out after 8 s,
+    and no route renders `null` as a whole page.
+  - `public/sw.js` is a service worker (production builds only): hashed `/_next/static`
+    files cache-first, pages and `.txt` payloads network-first with a 3 s fallback to the
+    last good copy. It never touches other origins, so Parse and map tiles are unaffected.
+    Its **kill switch** is at the top of the file. Bump its `VERSION` if its caching rules
+    change.
+  - `src/app/error.tsx` / `global-error.tsx` catch crashes (a stale chunk after a deploy
+    reloads once on its own).
+  - The backend half — Atlas indexes, `Message.city`, App Engine instance class, Mongo pool
+    and `maxTimeMS` — is in `docs/backend-performance.md`.
 - **Auth is the `loginStaff` cloud function**, not `Parse.User.logIn`. It authorizes staff
   server-side and hands back a session token that `Parse.User.become` adopts. See
   `src/hooks/use-session.ts`.

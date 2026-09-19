@@ -1,7 +1,7 @@
 import { DRIVER_ONLINE_WINDOW_MS } from '@/lib/ops/dispatch';
 import { runFunction } from '@/lib/parse/cloud';
-import { find, findWithCount, pointer, type PageResult, type QueryParam } from '@/lib/parse/query';
-import type { DispatchOrderRow } from '@/types/order';
+import { find, findOne, findWithCount, pointer, type PageResult, type QueryParam } from '@/lib/parse/query';
+import type { DispatchOrderRow, OrderRow } from '@/types/order';
 import type { DriverParty } from '@/types/user';
 
 const ORDER = 'Order';
@@ -28,9 +28,15 @@ export const ONGOING_LIMIT = 500;
 
 /**
  * What the map renders from each order. `userAddress` and `driver` are the two it can't
- * do without — the customer's pin and the driver's position both live on those rows —
- * while `food` and `promo` feed the basket and payment the panel lists, the same as the
- * board's. No `select` alongside, for the reason given in lib/services/orders.ts.
+ * do without — the customer's pin and the driver's position both live on those rows. No
+ * `select` alongside, for the reason given in lib/services/orders.ts.
+ *
+ * **Not `food` or `promo`.** Parse 4.3 resolves each include as its own uncapped query per
+ * class, so `food` on up to 500 orders pulled every dish row they point at — pictures,
+ * options and all — every 15 seconds, background tabs included. The map needs dish *names*
+ * and the promo code only for the one order open in the panel, and reads those with
+ * `getOrderContents`. Without the include, `food` is still the array of pointers, so every
+ * item count (`readBasket`, keyed by the pointer's objectId) stays right.
  */
 const ORDER_INCLUDES: QueryParam[] = [
   { include: 'user' },
@@ -38,8 +44,6 @@ const ORDER_INCLUDES: QueryParam[] = [
   { include: 'restaurant' },
   { include: 'city' },
   { include: 'userAddress' },
-  { include: 'food' },
-  { include: 'promo' },
 ];
 
 export type OngoingOrders = PageResult<DispatchOrderRow>;
@@ -64,6 +68,16 @@ export function listOngoingOrders(region: string): Promise<OngoingOrders> {
     ...ORDER_INCLUDES,
     { descending: 'createdAt' },
     { limit: ONGOING_LIMIT },
+  ]);
+}
+
+/** One order's basket and promo — the two things the live map's list read leaves out (see
+ * `ORDER_INCLUDES`) — for the order open in the panel. */
+export function getOrderContents(orderId: string): Promise<OrderRow | null> {
+  return findOne<OrderRow>(ORDER, [
+    { equalTo: { key: 'objectId', value: orderId } },
+    { include: 'food' },
+    { include: 'promo' },
   ]);
 }
 

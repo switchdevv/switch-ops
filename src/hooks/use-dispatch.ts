@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query/keys';
-import { assignDriver, listOngoingOrders, listOnlineDrivers } from '@/lib/services/dispatch';
+import { assignDriver, getOrderContents, listOngoingOrders, listOnlineDrivers } from '@/lib/services/dispatch';
 import { settleQueueAfterAssign } from '@/lib/services/queue';
 
 /**
@@ -39,6 +39,18 @@ export function useOnlineDrivers(region: string, isLive: boolean) {
     queryFn: () => listOnlineDrivers(region),
     placeholderData: keepPreviousData,
     refetchInterval: isLive ? DISPATCH_INTERVAL_MS : false,
+  });
+}
+
+/** The basket and promo of the order open in the map's panel — the list read doesn't carry
+ * them (see `ORDER_INCLUDES` in lib/services/dispatch.ts). A basket changes only through an
+ * edit, which invalidates `dispatch.all`, so a minute's freshness is plenty. */
+export function useOrderContents(orderId: string) {
+  return useQuery({
+    queryKey: queryKeys.dispatch.contents(orderId),
+    queryFn: () => getOrderContents(orderId),
+    enabled: orderId.length > 0,
+    staleTime: 60_000,
   });
 }
 

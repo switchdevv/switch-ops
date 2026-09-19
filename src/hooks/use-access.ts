@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from '@/hooks/use-session';
 import { queryKeys } from '@/lib/query/keys';
+import { readCachedAccess, writeCachedAccess } from '@/lib/auth/access-cache';
 import { getAccessFor } from '@/lib/services/staff';
 import { regionScope, staffRole, type RegionScope, type StaffRole } from '@/lib/auth/access';
 import type { SwitchUser } from '@/types/user';
@@ -41,8 +42,17 @@ export function useAccess(): AccessState {
 
   const query = useQuery({
     queryKey: queryKeys.access.current(objectId),
-    queryFn: () => getAccessFor(objectId),
+    queryFn: async () => {
+      const row = await getAccessFor(objectId);
+      writeCachedAccess(objectId, row);
+      return row;
+    },
     enabled: objectId.length > 0,
+    // The row this browser last had confirmed, so the console opens without waiting on the
+    // network — see lib/auth/access-cache.ts. Dated at 0, it is stale from the start, so
+    // the server is asked straight away and its answer replaces it.
+    initialData: () => readCachedAccess(objectId)?.row,
+    initialDataUpdatedAt: 0,
     // Long enough that moving between pages doesn't re-ask on every navigation, short
     // enough that a revoked role surfaces within a minute rather than at session end.
     staleTime: 60_000,
@@ -55,7 +65,10 @@ export function useAccess(): AccessState {
     // A disabled query sits in `pending` forever, so the session's own pending state is
     // what covers the window before there's an id to query with.
     isPending: sessionPending || (objectId.length > 0 && query.isPending),
-    isError: query.isError,
+    // Only a failure with nothing to go on. A re-check that fails after a row was already
+    // confirmed keeps `data` (React Query flags the query as errored anyway), and a dropped
+    // connection is no reason to take a working console away from someone.
+    isError: query.isError && query.data === undefined,
     error: query.error,
     refetch: () => void query.refetch(),
   };

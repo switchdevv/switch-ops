@@ -394,6 +394,22 @@
   animation: ops-indeterminate 1.1s ease-in-out infinite;
 }
 
+/* The splash's reload control (lib/i18n/provider.tsx): hidden, then shown once the page has
+   waited long enough that its scripts may never arrive. CSS alone, because the case it is
+   for is the one where no JavaScript is running. */
+@keyframes ops-late-appear {
+  to {
+    opacity: 1;
+    visibility: visible;
+  }
+}
+
+@utility ops-late-appear {
+  opacity: 0;
+  visibility: hidden;
+  animation: ops-late-appear 0.3s ease-out 15s forwards;
+}
+
 /* ---------------------------------------------------------------------------
    The live map.
 

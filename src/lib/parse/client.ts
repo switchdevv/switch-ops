@@ -1,5 +1,6 @@
 import 'client-only';
 import Parse from 'parse';
+import { installRequestDeadlines } from './deadline';
 
 // Parse's browser build is localStorage-bound, so it may only ever be touched from
 // the browser — never at module scope, never during a server render. The
@@ -41,6 +42,8 @@ export function getParse(): typeof Parse {
     // (it's only sent as a header when truthy).
     Parse.initialize(appId, '');
     Parse.serverURL = serverURL;
+    // Before the first request can be made: the SDK itself never gives up on one.
+    installRequestDeadlines(Parse);
     initialized = true;
   }
 

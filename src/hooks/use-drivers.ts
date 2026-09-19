@@ -60,6 +60,9 @@ export function useDriverAccount(id: string, isEnabled: boolean) {
     queryFn: () => getDriverAccount(id),
     enabled: isEnabled && id.length > 0,
     staleTime: 0,
+    // Read when a form opens, not every time the window regains focus: it is a master-key
+    // cloud call returning the whole row.
+    refetchOnWindowFocus: false,
   });
 }
 

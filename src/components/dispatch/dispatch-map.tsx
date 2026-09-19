@@ -100,6 +100,8 @@ export default function DispatchMap({
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [retries, setRetries] = useState(0);
+  /** Bumped by Retry when the map itself couldn't be built, so the effect below runs again. */
+  const [buildAttempt, setBuildAttempt] = useState(0);
   const [layers, setLayers] = useState<MapLayers>(() => ({
     customers: true,
     restaurants: true,
@@ -138,24 +140,35 @@ export default function DispatchMap({
 
     ensureRtlText();
 
-    const instance = new MapLibreMap({
-      container,
-      // The real style is fetched and applied by the effect below; starting on a plain
-      // page-coloured background means no white flash in dark mode while it arrives.
-      style: blankStyle(initialThemeRef.current),
-      center: [FALLBACK_CENTER.lng, FALLBACK_CENTER.lat],
-      zoom: FALLBACK_ZOOM,
-      attributionControl: { compact: true },
-      // North up, flat, always. A dispatch map is read out loud to someone on a phone —
-      // "north of the roundabout" has to mean the same thing on both screens.
-      dragRotate: false,
-      pitchWithRotate: false,
-      touchPitch: false,
-      maxPitch: 0,
-      // One city's worth of tiles; copies of the world at the date line would only draw
-      // the same order twice.
-      renderWorldCopies: false,
-    });
+    // MapLibre throws from its constructor when the browser can't give it WebGL — hardware
+    // acceleration off, a blocklisted GPU, a phone out of graphics memory. Uncaught, that
+    // takes the whole console down; caught, it is the map's own error card with a Retry,
+    // and the panel beside it keeps working.
+    let instance: MapLibreMap;
+    try {
+      instance = new MapLibreMap({
+        container,
+        // The real style is fetched and applied by the effect below; starting on a plain
+        // page-coloured background means no white flash in dark mode while it arrives.
+        style: blankStyle(initialThemeRef.current),
+        center: [FALLBACK_CENTER.lng, FALLBACK_CENTER.lat],
+        zoom: FALLBACK_ZOOM,
+        attributionControl: { compact: true },
+        // North up, flat, always. A dispatch map is read out loud to someone on a phone —
+        // "north of the roundabout" has to mean the same thing on both screens.
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
+        maxPitch: 0,
+        // One city's worth of tiles; copies of the world at the date line would only draw
+        // the same order twice.
+        renderWorldCopies: false,
+      });
+    } catch (error) {
+      console.error('[dispatch-map] could not create the map', error);
+      queueMicrotask(() => setStatus('error'));
+      return;
+    }
     instance.touchZoomRotate.disableRotation();
 
     let cancelled = false;
@@ -173,7 +186,7 @@ export default function DispatchMap({
       observer.disconnect();
       instance.remove();
     };
-  }, []);
+  }, [buildAttempt]);
 
   // The base style, and the theme and language it is drawn in.
   useEffect(() => {
@@ -418,7 +431,8 @@ export default function DispatchMap({
                 className="mt-3"
                 onPress={() => {
                   setStatus('loading');
-                  setRetries((count) => count + 1);
+                  if (map) setRetries((count) => count + 1);
+                  else setBuildAttempt((count) => count + 1);
                 }}
               >
                 {t('dispatch.map.retry')}

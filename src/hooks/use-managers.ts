@@ -49,6 +49,8 @@ export function useManagerAccount(id: string, isEnabled: boolean) {
     queryFn: () => getManagerAccount(id),
     enabled: isEnabled && id.length > 0,
     staleTime: 0,
+    // Read when a form opens — see `useDriverAccount`.
+    refetchOnWindowFocus: false,
   });
 }
 

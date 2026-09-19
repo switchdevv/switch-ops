@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
+import { RefreshIcon } from '@/components/icons';
 import { makeFormatters, type Formatters } from '@/lib/format';
 import {
   DICTIONARIES,
@@ -104,6 +105,12 @@ export function useI18n(): I18nValue {
  * The one screen that may not contain a word — it is what the app renders before it
  * knows which language to render in. Deliberately not the shared FullPageLoader: that
  * one carries an accessible label, which would have to come from a dictionary.
+ *
+ * It is also what the exported HTML shows until the scripts run, so it is the screen left
+ * standing if they never arrive. The reload control appears after 15 s through CSS alone
+ * (`ops-late-appear`) and is a plain link to the page itself, so it works with no
+ * JavaScript at all — and a reload is served from the service worker's copy when the
+ * network is what failed (public/sw.js). Its only words are its label, in both languages.
  */
 function LanguageFreeSplash() {
   return (
@@ -113,6 +120,13 @@ function LanguageFreeSplash() {
         aria-hidden
         className="border-border border-t-accent size-5 animate-spin rounded-full border-2"
       />
+      <a
+        href=""
+        aria-label="Reload · Recharger"
+        className="ops-late-appear border-border text-muted hover:text-foreground grid size-10 place-items-center rounded-full border"
+      >
+        <RefreshIcon aria-hidden className="size-4" />
+      </a>
     </div>
   );
 }

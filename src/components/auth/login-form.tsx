@@ -7,6 +7,7 @@ import { useLogin, useSession } from '@/hooks/use-session';
 import { useI18n } from '@/lib/i18n/provider';
 import { parseErrorKey } from '@/lib/parse/errors';
 import { BrandMark } from '@/components/brand-mark';
+import { FullPageLoader } from '@/components/full-page-loader';
 import { LanguageToggle } from '@/components/language-toggle';
 
 /**
@@ -37,7 +38,10 @@ export function LoginForm() {
     if (!sessionPending && user) router.replace(next);
   }, [sessionPending, user, next, router]);
 
-  if (sessionPending || user) return null;
+  // Never an empty page: while the session resolves, or while a signed-in visitor is sent
+  // on — a navigation that can take a while on a slow connection — the loader shows, with
+  // its way out if it takes too long.
+  if (sessionPending || user) return <FullPageLoader />;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

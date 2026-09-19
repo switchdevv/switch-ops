@@ -13,6 +13,9 @@ export function useMenus(restaurantId: string, filters: MenuFilters, page: numbe
     queryKey: queryKeys.menus.list(restaurantId, filters, page),
     queryFn: () => listMenus(restaurantId, filters, page),
     placeholderData: keepPreviousData,
+    // One page is a list read plus a dish count per menu — up to 26 requests — so an
+    // alt-tab back shouldn't repeat it every half minute. Edits invalidate it anyway.
+    staleTime: 60_000,
     enabled: isEnabled && restaurantId.length > 0,
   });
 }

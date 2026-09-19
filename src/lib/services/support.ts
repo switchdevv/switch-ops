@@ -1,6 +1,6 @@
 import { runFunction } from '@/lib/parse/cloud';
 import { MESSAGE_NOT_FOUND, SENDER_GONE } from '@/lib/parse/errors';
-import { count, find, findOne, findWithCount, pointer, type PageResult, type QueryParam } from '@/lib/parse/query';
+import { find, findOne, findWithCount, pointer, type PageResult, type QueryParam } from '@/lib/parse/query';
 import {
   NEW_MESSAGES_LIMIT,
   replyCopyFor,
@@ -136,10 +136,44 @@ export async function listMessages(
   return { count: result.count, results: result.results.map(narrow) };
 }
 
-/** How many messages in the current search, region, app and period this account hasn't
- * opened — the number on the Unread tab. */
-export function countUnread(filters: SupportFilters, marks: ReadMarks): Promise<number> {
-  return count(MESSAGE, [...scopeParams(filters), ...unreadParams(marks)]);
+/** How many unread ids come back with the count — enough to cover every message someone
+ * opens before the next read, far more than the bell's "99+" ever shows. */
+export const UNREAD_IDS_LIMIT = 500;
+
+export type UnreadSnapshot = {
+  /** Unread messages in the current search, region, app and period, as the server counted
+   * them with the read marks of the moment. */
+  count: number;
+  /** The newest of them, by id — so a message opened afterwards can be taken off the count
+   * in the browser (see `useSupportUnreadCount`) without asking the server again. */
+  ids: string[];
+};
+
+/**
+ * The number on the Unread tab and on the bell, with the ids behind it.
+ *
+ * Ids rather than a bare count because opening a message used to change this query's key
+ * and send it again — and for a staff account it carries the region sub-query, which on
+ * Parse 4.3 loads every account of the region into the server. Now the key moves only with
+ * `marks.since`, and each message opened is subtracted locally.
+ */
+export async function listUnread(filters: SupportFilters, marks: ReadMarks): Promise<UnreadSnapshot> {
+  const page = await findWithCount<{ objectId: string }>(MESSAGE, [
+    ...scopeParams(filters),
+    ...unreadParams(marks),
+    { select: ['objectId'] },
+    { descending: 'createdAt' },
+    { limit: UNREAD_IDS_LIMIT },
+  ]);
+  return { count: page.count, ids: page.results.map((row) => row.objectId) };
+}
+
+/** What the unread number is now, given the marks as they are. A message opened since the
+ * server counted is taken off when it was among the ids the server returned. */
+export function unreadNow(snapshot: UnreadSnapshot, marks: ReadMarks): number {
+  const opened = new Set(marks.ids);
+  const readSince = snapshot.ids.reduce((total, id) => total + (opened.has(id) ? 1 : 0), 0);
+  return Math.max(0, snapshot.count - readSince);
 }
 
 /** One message — or null when there is none, or it belongs to a region outside

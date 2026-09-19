@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 
 /**
  * One clock for the whole page, ticking on an interval.
@@ -25,4 +25,43 @@ export function useNow(intervalMs = 30_000): number {
   }, [intervalMs]);
 
   return now;
+}
+
+/* ---- one shared one-second clock ------------------------------------------------- */
+
+const secondListeners = new Set<() => void>();
+let secondNow = Date.now();
+let secondTimer: ReturnType<typeof setInterval> | undefined;
+
+function subscribeSecond(listener: () => void) {
+  secondListeners.add(listener);
+  if (secondTimer === undefined) {
+    secondNow = Date.now();
+    secondTimer = setInterval(() => {
+      secondNow = Date.now();
+      for (const notify of secondListeners) notify();
+    }, 1000);
+    // The snapshot may have been read while no clock was running; bring it up to date.
+    listener();
+  }
+  return () => {
+    secondListeners.delete(listener);
+    if (secondListeners.size === 0 && secondTimer !== undefined) {
+      clearInterval(secondTimer);
+      secondTimer = undefined;
+    }
+  };
+}
+
+/**
+ * A once-a-second clock for countdowns ("going out in 3 s"), shared by every component that
+ * reads it: one timer and one render pass per second, however many rows are counting —
+ * where `useNow(1000)` per row meant one interval, and one render, per queued order.
+ */
+export function useSecondClock(): number {
+  return useSyncExternalStore(
+    subscribeSecond,
+    () => secondNow,
+    () => secondNow,
+  );
 }
