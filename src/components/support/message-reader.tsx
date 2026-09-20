@@ -65,7 +65,6 @@ import { SenderDeliveries } from './sender-deliveries';
 export function MessageReader({
   id,
   fromList,
-  pinnedRegion,
   cityNames,
   now,
   hrefFor,
@@ -78,7 +77,6 @@ export function MessageReader({
   id: string;
   /** The row as the list has it, when it is on the page. */
   fromList: SupportMessage | undefined;
-  pinnedRegion: string;
   cityNames: Map<string, string>;
   now: number;
   /** Opens another message in the inbox, keeping its filters. */
@@ -90,7 +88,7 @@ export function MessageReader({
   onOpened: (id: string) => void;
 }) {
   const { t, format } = useI18n();
-  const query = useSupportMessage(id, pinnedRegion, fromList);
+  const query = useSupportMessage(id, fromList);
   const remove = useDeleteMessage();
   const [isDeleting, setIsDeleting] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -211,7 +209,6 @@ export function MessageReader({
             name={name}
             apps={apps}
             language={sender.language}
-            pinnedRegion={pinnedRegion}
           />
         ) : (
           <p className="text-caption text-faint">
@@ -221,7 +218,7 @@ export function MessageReader({
 
         {/* ---- what the message is about ---- */}
         {isDriver && sender && (
-          <SenderDeliveries driverId={sender.objectId} messageAt={message.createdAt} pinnedRegion={pinnedRegion} />
+          <SenderDeliveries driverId={sender.objectId} messageAt={message.createdAt} />
         )}
 
         {/* ---- the other ways to reach them ---- */}
@@ -330,26 +327,14 @@ export function MessageReader({
         {sender && (
           <>
             {!isDriver && (
-              <RecentOrders
-                userId={sender.objectId}
-                pinnedRegion={pinnedRegion}
-                now={now}
-                title={t('support.reader.recentOrders')}
-              />
+              <RecentOrders userId={sender.objectId} now={now} title={t('support.reader.recentOrders')} />
             )}
-            <History
-              userId={sender.objectId}
-              currentId={message.objectId}
-              pinnedRegion={pinnedRegion}
-              now={now}
-              hrefFor={hrefFor}
-            />
+            <History userId={sender.objectId} currentId={message.objectId} now={now} hrefFor={hrefFor} />
             {/* A driver's orders as a customer: last, and only when there are any — one more
                 empty panel under every driver's message would be all it ever is. */}
             {isDriver && (
               <RecentOrders
                 userId={sender.objectId}
-                pinnedRegion={pinnedRegion}
                 now={now}
                 title={t('support.reader.customerOrders')}
                 hideWhenEmpty
@@ -370,7 +355,7 @@ export function MessageReader({
           onClose={() => setIsDeleting(false)}
           onConfirm={() =>
             remove.mutate(
-              { id: message.objectId, pinnedRegion },
+              { id: message.objectId },
               {
                 onSuccess: () => {
                   setIsDeleting(false);
@@ -500,19 +485,17 @@ function Fact({ icon, label, children }: { icon?: ReactNode; label?: string; chi
  * driver, where this is a footnote rather than the point. */
 function RecentOrders({
   userId,
-  pinnedRegion,
   now,
   title,
   hideWhenEmpty,
 }: {
   userId: string;
-  pinnedRegion: string;
   now: number;
   title: string;
   hideWhenEmpty?: boolean;
 }) {
   const { t, format } = useI18n();
-  const query = useSenderOrders(userId, pinnedRegion);
+  const query = useSenderOrders(userId);
   const orders = query.data?.results ?? [];
 
   if (hideWhenEmpty && orders.length === 0) return null;
@@ -564,18 +547,16 @@ function RecentOrders({
 function History({
   userId,
   currentId,
-  pinnedRegion,
   now,
   hrefFor,
 }: {
   userId: string;
   currentId: string;
-  pinnedRegion: string;
   now: number;
   hrefFor: (id: string) => string;
 }) {
   const { t, format } = useI18n();
-  const query = useSenderMessages(userId, pinnedRegion);
+  const query = useSenderMessages(userId);
   const messages = query.data?.results ?? [];
 
   return (

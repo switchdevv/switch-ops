@@ -23,10 +23,14 @@ const USER = '_User';
  *
  * Two things the dashboard didn't have, and what they rest on:
  *
- * - **Regions.** A message has no region column. The server's own `afterSave` on `Message`
- *   (switch-server cloud/message/message.js) notifies the staff of the *sender's* `city`, so
- *   that is the region a message belongs to here too, matched through the `user` pointer.
- *   A sender with no region is only seen by admins — the same people the server notifies.
+ * - **No regions.** Every staff account reads the whole inbox. A `Message` has no region
+ *   column, so the only region it could have is its *sender's* `city` — reachable only as a
+ *   `matchesQuery` over `_User`, which has no index on it: on this data the subquery times
+ *   out, and the inbox came up empty. It was never a permission either (the `Message` class
+ *   is readable by any Staff session), and support is how ops and drivers talk while a
+ *   delivery runs — whoever is on the console answers. So nothing here filters by region,
+ *   and nothing re-reads a row "within" one before writing. The sender's region is still
+ *   shown in the reader, as a fact about them.
  * - **Replies.** `sendPush` to the sender's account, which all three apps show as a card
  *   with the title and the text (their Home screens' `showMessage`) — and, since ops and
  *   drivers use this inbox to talk while a delivery runs, with a button that opens the
@@ -35,8 +39,9 @@ const USER = '_User';
  *   so a driver's message is read beside the orders they were carrying when they wrote it
  *   (see `listSenderDeliveries`).
  *
- * `deleteMessages` and `sendPush` check a role and nothing else — no region — so a staff
- * account is confined here, before each call, by re-reading the message within its region.
+ * `deleteMessages` and `sendPush` check a role and nothing else, which is all this inbox
+ * needs: a message is still re-read before either call, but only to know it is still there
+ * and who wrote it.
  */
 
 export const SUPPORT_PAGE_SIZE = 20;
@@ -73,25 +78,23 @@ function narrow(message: SupportMessage): SupportMessage {
   return { ...message, user: narrowSender(user) };
 }
 
-/** The sender's region and app, as one constraint on `user` — Parse keeps only the last
- * `matchesQuery` on a key, so the two can't be separate params. */
-function senderParams(region: string, app: SenderApp | ''): QueryParam {
-  if (!region && !app) return {};
+/** The app the sender signed into, as a constraint on `user`. The only sub-query this
+ * inbox sends — `appType` is a small, selective column, unlike the `city` this used to
+ * narrow regions by. */
+function senderAppParams(app: SenderApp | ''): QueryParam {
+  if (!app) return {};
   return {
     matchesQuery: {
       key: 'user',
       className: USER,
-      params: [
-        region ? { equalTo: { key: 'city', value: pointer('City', region) } } : {},
-        // An equality against an array column matches rows whose array contains it.
-        app ? { equalTo: { key: 'appType', value: app } } : {},
-      ],
+      // An equality against an array column matches rows whose array contains it.
+      params: [{ equalTo: { key: 'appType', value: app } }],
     },
   };
 }
 
 function scopeParams(filters: SupportFilters): QueryParam[] {
-  const { query, field, region, app, range } = filters;
+  const { query, field, app, range } = filters;
   return [
     // Names, emails and text match anywhere, ignoring case; a phone anywhere in the field.
     // The regex is escaped in lib/parse/query.ts.
@@ -101,7 +104,7 @@ function scopeParams(filters: SupportFilters): QueryParam[] {
     query && field === 'phone' ? { matches: { key: 'phone', value: query } } : {},
     query && field === 'objectId' ? { startsWith: { key: 'objectId', value: query } } : {},
     query && field === 'user' ? { equalTo: { key: 'user', value: pointer(USER, query) } } : {},
-    senderParams(region, app),
+    senderAppParams(app),
     range.start ? { greaterThanOrEqualTo: { key: 'createdAt', value: range.start } } : {},
     range.end ? { lessThanOrEqualTo: { key: 'createdAt', value: range.end } } : {},
   ];
@@ -141,8 +144,8 @@ export async function listMessages(
 export const UNREAD_IDS_LIMIT = 500;
 
 export type UnreadSnapshot = {
-  /** Unread messages in the current search, region, app and period, as the server counted
-   * them with the read marks of the moment. */
+  /** Unread messages in the current search, app and period, as the server counted them with
+   * the read marks of the moment. */
   count: number;
   /** The newest of them, by id — so a message opened afterwards can be taken off the count
    * in the browser (see `useSupportUnreadCount`) without asking the server again. */
@@ -153,9 +156,8 @@ export type UnreadSnapshot = {
  * The number on the Unread tab and on the bell, with the ids behind it.
  *
  * Ids rather than a bare count because opening a message used to change this query's key
- * and send it again — and for a staff account it carries the region sub-query, which on
- * Parse 4.3 loads every account of the region into the server. Now the key moves only with
- * `marks.since`, and each message opened is subtracted locally.
+ * and send it again. Now the key moves only with `marks.since`, and each message opened is
+ * subtracted locally.
  */
 export async function listUnread(filters: SupportFilters, marks: ReadMarks): Promise<UnreadSnapshot> {
   const page = await findWithCount<{ objectId: string }>(MESSAGE, [
@@ -176,12 +178,10 @@ export function unreadNow(snapshot: UnreadSnapshot, marks: ReadMarks): number {
   return Math.max(0, snapshot.count - readSince);
 }
 
-/** One message — or null when there is none, or it belongs to a region outside
- * `pinnedRegion`. The two are answered alike, as a restaurant or a driver is. */
-export async function getMessage(id: string, pinnedRegion: string): Promise<SupportMessage | null> {
+/** One message, or null when there is none — a link to a message someone has deleted. */
+export async function getMessage(id: string): Promise<SupportMessage | null> {
   const row = await findOne<SupportMessage>(MESSAGE, [
     { equalTo: { key: 'objectId', value: id } },
-    senderParams(pinnedRegion, ''),
     { include: 'user' },
   ]);
   return row ? narrow(row) : null;
@@ -206,16 +206,8 @@ export async function newestMessageCursor(): Promise<AlertCursor> {
   return { at: new Date(row.createdAt).getTime(), ids: [row.objectId] };
 }
 
-/**
- * The messages saved since the cursor, oldest first — the whole platform's, not just this
- * account's region.
- *
- * Deliberately **not** narrowed to a region by the server. `senderParams` would send a
- * `matchesQuery` over `_User`, which has no `city` index, and this runs every thirty
- * seconds in every open console; the caller sorts the handful of rows by `isInScope`
- * instead. The `Message` class is readable by any Staff session anyway — the region is a
- * rule about whose work a message is, not a permission.
- */
+/** The messages saved since the cursor, oldest first — the whole platform's, as the inbox
+ * itself now reads it. */
 export async function listMessagesSince(cursor: AlertCursor): Promise<SupportMessage[]> {
   const rows = await find<SupportMessage>(MESSAGE, [
     { greaterThanOrEqualTo: { key: 'createdAt', value: new Date(cursor.at) } },
@@ -233,24 +225,22 @@ export async function listMessagesSince(cursor: AlertCursor): Promise<SupportMes
 /** Everything else this account has written to support, newest first. */
 export const HISTORY_LIMIT = 10;
 
-export function listSenderMessages(userId: string, pinnedRegion: string): Promise<PageResult<SupportMessage>> {
+export function listSenderMessages(userId: string): Promise<PageResult<SupportMessage>> {
   return findWithCount<SupportMessage>(MESSAGE, [
     { equalTo: { key: 'user', value: pointer(USER, userId) } },
-    senderParams(pinnedRegion, ''),
     { select: ['fullname', 'message'] },
     { descending: 'createdAt' },
     { limit: HISTORY_LIMIT },
   ]);
 }
 
-/** The sender's latest orders as a customer, for context. A staff account sees only the
- * ones in its region, as on the board. */
+/** The sender's latest orders as a customer, for context — every region, like the inbox
+ * they are read from. */
 export const RECENT_ORDERS_LIMIT = 5;
 
-export function listSenderOrders(userId: string, pinnedRegion: string): Promise<PageResult<OrderRow>> {
+export function listSenderOrders(userId: string): Promise<PageResult<OrderRow>> {
   return findWithCount<OrderRow>('Order', [
     { equalTo: { key: 'user', value: pointer(USER, userId) } },
-    pinnedRegion ? { equalTo: { key: 'city', value: pointer('City', pinnedRegion) } } : {},
     { include: 'restaurant' },
     { include: 'city' },
     { descending: 'createdAt' },
@@ -278,15 +268,10 @@ export function listSenderOrders(userId: string, pinnedRegion: string): Promise<
  */
 export const DELIVERIES_LIMIT = 5;
 
-export function listSenderDeliveries(
-  driverId: string,
-  before: string,
-  pinnedRegion: string,
-): Promise<OrderRow[]> {
+export function listSenderDeliveries(driverId: string, before: string): Promise<OrderRow[]> {
   return find<OrderRow>('Order', [
     { equalTo: { key: 'driver', value: pointer(USER, driverId) } },
     { lessThanOrEqualTo: { key: 'createdAt', value: new Date(before) } },
-    pinnedRegion ? { equalTo: { key: 'city', value: pointer('City', pinnedRegion) } } : {},
     { include: 'restaurant' },
     { include: 'user' },
     { include: 'city' },
@@ -301,11 +286,11 @@ export function listSenderDeliveries(
  * Deletes a message through `deleteMessages`.
  *
  * The function reads each id and destroys it without checking it found anything, so a
- * message someone else already deleted makes it throw a bare 141. It is re-read first, within
- * the account's region, and a missing one refused with a sentence that says what happened.
+ * message someone else already deleted makes it throw a bare 141. It is re-read first, and a
+ * missing one refused with a sentence that says what happened.
  */
-export async function deleteMessage(id: string, pinnedRegion: string): Promise<void> {
-  const message = await getMessage(id, pinnedRegion);
+export async function deleteMessage(id: string): Promise<void> {
+  const message = await getMessage(id);
   if (!message) throw new Error(MESSAGE_NOT_FOUND);
   await runFunction('deleteMessages', { ids: [id] });
 }
@@ -331,13 +316,8 @@ export async function deleteMessage(id: string, pinnedRegion: string): Promise<v
  * `pushToken[app]` off a row that may have no `pushToken` at all — a TypeError on the server,
  * which comes back as a 141 — so that is told apart in `parseErrorKey`'s support branch.
  */
-export async function replyToMessage(
-  id: string,
-  app: SenderApp,
-  body: string,
-  pinnedRegion: string,
-): Promise<void> {
-  const message = await getMessage(id, pinnedRegion);
+export async function replyToMessage(id: string, app: SenderApp, body: string): Promise<void> {
+  const message = await getMessage(id);
   if (!message) throw new Error(MESSAGE_NOT_FOUND);
   const sender = senderOf(message);
   if (!sender) throw new Error(SENDER_GONE);

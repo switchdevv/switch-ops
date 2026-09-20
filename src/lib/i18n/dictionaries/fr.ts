@@ -58,7 +58,7 @@ export const fr: Dictionary = {
       anyApp: 'Toutes les applications',
       period: 'Période',
       searchPlaceholder: 'Rechercher dans la boîte…',
-      regionLocked: 'Votre région assignée — les messages de personnes hors de celle-ci ne sont pas affichés.',
+      everyRegion: 'Toutes les régions — le support est traité par qui est sur la console.',
       markAllRead: 'Tout marquer comme lu',
       readHint: 'Lu et non lu sont gardés dans ce navigateur, pour votre compte uniquement.',
     },

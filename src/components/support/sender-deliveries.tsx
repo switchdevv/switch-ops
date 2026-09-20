@@ -31,15 +31,13 @@ import { CheckIcon, PencilIcon } from '@/components/icons';
 export function SenderDeliveries({
   driverId,
   messageAt,
-  pinnedRegion,
 }: {
   driverId: string;
   /** The message's `createdAt` — the moment the list is read up to. */
   messageAt: string;
-  pinnedRegion: string;
 }) {
   const { t } = useI18n();
-  const query = useSenderDeliveries(driverId, messageAt, pinnedRegion);
+  const query = useSenderDeliveries(driverId, messageAt);
   const [editing, setEditing] = useState<OrderRow | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 

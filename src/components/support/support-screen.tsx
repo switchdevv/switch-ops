@@ -8,7 +8,6 @@ import { useCities } from '@/hooks/use-cities';
 import { useNow } from '@/hooks/use-now';
 import { useSupportMessages, useSupportUnreadCount } from '@/hooks/use-support';
 import { useReadMarks } from '@/hooks/use-support-read-marks';
-import { pinnedRegionId } from '@/lib/auth/access';
 import type { MessageKey } from '@/lib/i18n/dictionary';
 import { useI18n } from '@/lib/i18n/provider';
 import { resolveRange } from '@/lib/ops/date-range';
@@ -16,7 +15,6 @@ import { isUnread, SENDER_APP_LABEL_KEY, SENDER_APPS, type ReadMarks, type Sende
 import { SUPPORT_PAGE_SIZE } from '@/lib/services/support';
 import {
   activeSupportFilterCount,
-  confineSupportToRegion,
   emptySupportFilters,
   parseSelectedMessage,
   parseSupportFilters,
@@ -65,24 +63,23 @@ type View = 'all' | 'unread';
  * and the ways to answer them one click away.
  *
  * Built like the other lists — the whole state in the query string (the open message
- * included, so "look at this one" is a link), a staff account's region pinned where the URL
- * is read, the last list remembered per account. Unread is this account's own, on this
- * browser (see hooks/use-support-read-marks.ts).
+ * included, so "look at this one" is a link) and the last list remembered per account.
+ * Unread is this account's own, on this browser (see hooks/use-support-read-marks.ts).
+ *
+ * The one list in this console with **no region**: every staff account reads the whole
+ * inbox, and there is no region filter to narrow it by. Why, in lib/url/support-filters.ts.
+ * Cities are still read, to name the sender's region in the reader.
  */
 export function SupportScreen() {
   const { t, format } = useI18n();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { region, account } = useAccess();
-  const pinnedRegion = pinnedRegionId(region);
+  const { account } = useAccess();
   const search = searchParams.toString();
   const accountId = account?.objectId ?? '';
 
-  const filters = useMemo(
-    () => confineSupportToRegion(parseSupportFilters(new URLSearchParams(search)), pinnedRegion),
-    [search, pinnedRegion],
-  );
+  const filters = useMemo(() => parseSupportFilters(new URLSearchParams(search)), [search]);
   const page = parseSupportPage(new URLSearchParams(search));
   const selectedId = parseSelectedMessage(new URLSearchParams(search));
 
@@ -130,8 +127,8 @@ export function SupportScreen() {
     [filters, navigate, selectedId],
   );
   const resetFilters = useCallback(
-    () => navigate(confineSupportToRegion({ ...emptySupportFilters(), unread: filters.unread }, pinnedRegion), 1, selectedId),
-    [filters.unread, navigate, pinnedRegion, selectedId],
+    () => navigate({ ...emptySupportFilters(), unread: filters.unread }, 1, selectedId),
+    [filters.unread, navigate, selectedId],
   );
   const hrefFor = useCallback((id: string) => hrefWith(filters, page, id), [filters, hrefWith, page]);
 
@@ -178,12 +175,6 @@ export function SupportScreen() {
     () => new Map((citiesQuery.data ?? []).map((city) => [city.objectId, city.name ?? city.objectId])),
     [citiesQuery.data],
   );
-  const regionOptions: SelectOption[] = pinnedRegion
-    ? [{ value: pinnedRegion, label: cityNames.get(pinnedRegion) ?? pinnedRegion }]
-    : [
-        { value: '', label: t('orders.filters.anyRegion') },
-        ...(citiesQuery.data ?? []).map((city) => ({ value: city.objectId, label: city.name ?? city.objectId })),
-      ];
   const appOptions: SelectOption[] = [
     { value: '', label: t('support.filters.anyApp') },
     ...SENDER_APPS.map((app) => ({ value: app, label: t(SENDER_APP_LABEL_KEY[app]) })),
@@ -198,7 +189,7 @@ export function SupportScreen() {
     },
   ];
 
-  const activeCount = activeSupportFilterCount(filters, pinnedRegion);
+  const activeCount = activeSupportFilterCount(filters);
   const hasFilters = activeCount > 0;
   const onOpened = useCallback((id: string) => markRead(id), [markRead]);
 
@@ -249,15 +240,6 @@ export function SupportScreen() {
             </div>
 
             <SelectField
-              label={t('orders.filters.region')}
-              value={filters.region}
-              options={regionOptions}
-              isDisabled={pinnedRegion.length > 0}
-              onChange={(regionId) => applyFilters({ region: regionId })}
-              className="w-44"
-            />
-
-            <SelectField
               label={t('support.filters.app')}
               value={filters.app}
               options={appOptions}
@@ -299,8 +281,7 @@ export function SupportScreen() {
           </div>
 
           <p className="text-caption text-faint">
-            {pinnedRegion && `${t('support.filters.regionLocked')} `}
-            {t('support.filters.readHint')}
+            {t('support.filters.everyRegion')} {t('support.filters.readHint')}
           </p>
         </div>
       </section>
@@ -360,7 +341,6 @@ export function SupportScreen() {
               key={selectedId}
               id={selectedId}
               fromList={selectedIndex >= 0 ? rows[selectedIndex] : undefined}
-              pinnedRegion={pinnedRegion}
               cityNames={cityNames}
               now={now}
               hrefFor={hrefFor}

@@ -16,11 +16,13 @@ no deploy.
   `_User.driverActive`, `_User.appType`, `Message.createdAt`, `Message.user`, `Order.city`
   or `Order.driver`. Every query on those is a full collection scan, and on Parse 4.3 every
   non-master `count` is a real `countDocuments` scan.
-- **The support region filter** (`matchesQuery` on the sender's `city`, in
-  `src/lib/services/support.ts`). Parse 4.3 runs the sub-query with **no limit and no keys**
-  (`parse-server/lib/RestQuery.js`, `replaceInQuery`): it loads **every account of the
-  region, in full**, into the instance's memory, then matches the messages against that
-  list.
+- **Sub-queries over `_User`** (`matchesQuery`, as the support inbox's "Sent from" filter
+  uses on `appType`). Parse 4.3 runs a sub-query with **no limit and no keys**
+  (`parse-server/lib/RestQuery.js`, `replaceInQuery`): it loads **every matching account, in
+  full**, into the instance's memory, then matches the rows against that list. The support
+  inbox used to send one of these on *every* read, for the sender's region — it timed out,
+  and the inbox came up empty. That filter is gone (the inbox has no region any more), so
+  the only one left is optional and narrow.
 - **A small database pool that waits forever.** The MongoDB driver (3.5.9) keeps 10
   connections and its wait queue has no timeout, and Parse has no `maxTimeMS`. A few slow
   queries fill the pool, and every other request, however small, queues behind them.
@@ -59,11 +61,11 @@ Each build reads the whole collection once.
 
 | Collection | Keys | What it fixes |
 |---|---|---|
-| `_User` | `{ _p_city: 1 }` | The support region filter's sub-query (the header bell on every page for staff accounts, the inbox, the reader); the customers list's region filter |
+| `_User` | `{ _p_city: 1 }` | The customers list's region filter |
 | `_User` | `{ driverActive: 1, _p_city: 1, _updated_at: -1 }` | The live map's online drivers, read every 15 s per open map and in every Confirm step (`listOnlineDrivers`) |
 | `_User` | `{ appType: 1, _p_city: 1 }` | The Drivers, Managers and Customers lists (`appType` is an array, so this is a multikey index — fine) |
 | `Message` | `{ _created_at: -1 }` | The support alerts, which look for new messages every 30 s in every console; the inbox's newest-first sort; the unread count (`createdAt > …`) |
-| `Message` | `{ _p_user: 1, _created_at: -1 }` | A sender's message history in the reader; the inbox once the region list is known |
+| `Message` | `{ _p_user: 1, _created_at: -1 }` | A sender's message history in the reader; the inbox searched by account id |
 | `Order` | `{ _p_city: 1, _created_at: -1 }` | The orders board (list and its 8 counts every 20 s), the live map's open orders, both per region |
 | `Order` | `{ _p_driver: 1, _created_at: -1 }` | The queue runner's "is this driver busy" check every 5 s; a driver's deliveries; a support message's deliveries |
 
@@ -80,49 +82,22 @@ db.getCollection('Order').find({ _p_city: 'City$REGION_ID', _created_at: { $gte:
 db.getCollection('Order').find({ _p_driver: { $in: ['_User$DRIVER_ID'] }, _created_at: { $gte: new Date(Date.now() - 12 * 3600e3) } }).explain('executionStats')
 ```
 
-**Necessary, not sufficient.** `{ _p_city: 1 }` makes the support sub-query *find* the
-region's accounts quickly, but Parse 4.3 still returns **every one of them, whole**, to a
-256 MB instance, because a sub-query carries no limit and no keys. For a region with tens of
-thousands of customers, that is still the heaviest request the console can send. Section 2
-removes it.
+**Necessary, not sufficient.** An index makes a sub-query *find* its accounts quickly, but
+Parse 4.3 still returns **every one of them, whole**, to a 256 MB instance, because a
+sub-query carries no limit and no keys. Section 2 is why the support inbox no longer sends
+one on every read.
 
-## 2. `Message.city` — the permanent fix for the support region filter
+## 2. The support inbox has no region — nothing to do here
 
-Stamp the sender's region on the message when it is written, so the console filters with a
-plain indexed equality instead of a sub-query over `_User`.
+This section used to specify a `Message.city` column, a `beforeSave` to stamp it, a backfill
+and an index, so the inbox's region filter could be a plain indexed equality instead of a
+sub-query over the sender's `city`. It is no longer needed: **the inbox has no region at
+all.** Every staff account reads every message, which is how support is actually answered —
+whoever is on the console replies, and a driver's message about the order in their hand
+can't wait for the one dispatcher assigned to their city.
 
-1. **Add the column** in the Parse Dashboard: `Message` → Add a column → `city`, type
-   *Pointer* to `City`. (`addField` on `Message` is master-key only, so a trigger setting a
-   column that doesn't exist yet would be refused.)
-2. **Set it on every new message** — `switch-server/cloud/message/message.js`, beside the
-   existing `afterSave`:
-
-   ```js
-   Parse.Cloud.beforeSave(MESSAGE_CLASS, async (req) => {
-       // The sender's region, the same rule the afterSave uses to pick which staff to
-       // notify. A sender without one stays without one (admins see those).
-       if (req.object.isNew() && req.user && req.user.get('city')) {
-           req.object.set('city', req.user.get('city'));
-       }
-   });
-   ```
-
-3. **Backfill** the existing rows, in `mongosh`, off-peak:
-
-   ```js
-   db.getCollection('Message').find({ _p_city: { $exists: false }, _p_user: { $exists: true } }).forEach((m) => {
-     const userId = m._p_user.split('$')[1];
-     const user = db.getCollection('_User').findOne({ _id: userId }, { _p_city: 1 });
-     if (user && user._p_city) db.getCollection('Message').updateOne({ _id: m._id }, { $set: { _p_city: user._p_city } });
-   });
-   ```
-
-4. **Index it:** `db.getCollection('Message').createIndex({ _p_city: 1, _created_at: -1 }, { name: 'ops_message_city_created' })`.
-5. **Then the console change** (about ten lines, in `src/lib/services/support.ts`): in
-   `senderParams`, replace the region half of the `matchesQuery` with
-   `{ equalTo: { key: 'city', value: pointer('City', region) } }` on the message itself, and
-   keep the `matchesQuery` only for the app filter. Deploy the console only after step 3,
-   or messages not yet backfilled disappear from staff inboxes.
+If a region ever has to come back to this inbox, this is still the shape of it: a column on
+`Message`, written at save time, never a `matchesQuery` over `_User.city`.
 
 ## 3. App Engine — `switch-server/app.yaml`
 
@@ -164,5 +139,7 @@ For reference — none of this needs the backend, and it is already in this repo
 - The live map no longer includes every dish and promo of up to 500 orders every 15 s; it
   reads them for the one open order.
 - A queue-runner tick no longer re-reads the whole orders board in every open tab.
-- The support unread count no longer re-runs its region query each time a message is opened,
-  or on every window focus.
+- The support unread count no longer re-runs its query each time a message is opened, or on
+  every window focus.
+- The support inbox sends no region sub-query at all: it reads every message, for every
+  staff account, with one indexed query on `Message`.

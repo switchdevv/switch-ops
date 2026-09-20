@@ -40,7 +40,6 @@ export function ReplyComposer({
   name,
   apps,
   language,
-  pinnedRegion,
 }: {
   messageId: string;
   name: string;
@@ -48,7 +47,6 @@ export function ReplyComposer({
   apps: SenderApp[];
   /** The sender's `_User.language`, which picks the copy around the reply. */
   language: string | undefined;
-  pinnedRegion: string;
 }) {
   const { t, format } = useI18n();
   const send = useReplyToMessage();
@@ -77,7 +75,7 @@ export function ReplyComposer({
       return;
     }
     send.mutate(
-      { id: messageId, app, body: validation.body, pinnedRegion },
+      { id: messageId, app, body: validation.body },
       {
         onSuccess: () => {
           setSent({ at: new Date().toISOString(), text: validation.body });

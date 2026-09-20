@@ -188,8 +188,7 @@ export const queryKeys = {
         marks,
       ] as const,
     /** Keyed on the read marks' `since` alone, not their ids: a message opened is taken off
-     * the number in the browser (`unreadNow`), rather than re-asking a server query that, for
-     * a staff account, carries the region sub-query. */
+     * the number in the browser (`unreadNow`), rather than re-asking the server. */
     unread: (filters: SupportFilters, since: number) =>
       [
         'support',
@@ -197,13 +196,12 @@ export const queryKeys = {
         { ...filters, unread: false, range: { preset: filters.range.preset, from: filters.range.from, to: filters.range.to } },
         { since },
       ] as const,
-    detail: (id: string, region: string) => ['support', 'detail', id, { region }] as const,
-    history: (userId: string, region: string) => ['support', 'history', userId, { region }] as const,
-    orders: (userId: string, region: string) => ['support', 'orders', userId, { region }] as const,
+    detail: (id: string) => ['support', 'detail', id] as const,
+    history: (userId: string) => ['support', 'history', userId] as const,
+    orders: (userId: string) => ['support', 'orders', userId] as const,
     /** A driver's deliveries up to the moment of one message — `before` is part of the key
      * because the read is anchored there, not on now. */
-    deliveries: (driverId: string, before: string, region: string) =>
-      ['support', 'deliveries', driverId, { before, region }] as const,
+    deliveries: (driverId: string, before: string) => ['support', 'deliveries', driverId, { before }] as const,
   },
   /**
    * Restaurant managers. Built like `drivers`: the list is keyed by region alone and filtered

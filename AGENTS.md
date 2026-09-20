@@ -37,8 +37,8 @@ switch-food / switch-driver / switch-manager, switch-dashboard and switch-financ
     change.
   - `src/app/error.tsx` / `global-error.tsx` catch crashes (a stale chunk after a deploy
     reloads once on its own).
-  - The backend half — Atlas indexes, `Message.city`, App Engine instance class, Mongo pool
-    and `maxTimeMS` — is in `docs/backend-performance.md`.
+  - The backend half — Atlas indexes, App Engine instance class, Mongo pool and
+    `maxTimeMS` — is in `docs/backend-performance.md`.
 - **Auth is the `loginStaff` cloud function**, not `Parse.User.logIn`. It authorizes staff
   server-side and hands back a session token that `Parse.User.become` adopts. See
   `src/hooks/use-session.ts`.
@@ -198,15 +198,23 @@ switch-food / switch-driver / switch-manager, switch-dashboard and switch-financ
   `Message` rows the Support screens of switch-food, switch-driver and switch-manager save.
   A row is `user`, `fullname`, `email`, `phone`, `message` and nothing else — no region, no
   status — and its ACL is the author's (plus public read), so a Staff session can read or
-  delete it and **never update it**. Hence: a message's region is its **sender's `city`**
-  (matched through `user` with `matchesQuery`, the same rule the server's `afterSave` uses to
-  notify staff), and **read/unread is per account, per browser** in localStorage
-  (`hooks/use-support-read-marks.ts`) — the screen says so. Delete is `deleteMessages`; reply
-  is `sendPush` to the sender's account with the app ops pick (a message doesn't record which
-  app it came from). Neither function checks region, so the message is re-read inside the
-  staff account's region before each. Account-deletion requests are recognised by the text
-  switch-food's Settings prefills. The included `_User` is narrowed at the boundary. Rules in
-  `lib/ops/support.ts`, I/O in `lib/services/support.ts`.
+  delete it and **never update it**. Hence **read/unread is per account, per browser** in
+  localStorage (`hooks/use-support-read-marks.ts`) — the screen says so. Delete is
+  `deleteMessages`; reply is `sendPush` to the sender's account with the app ops pick (a
+  message doesn't record which app it came from); each is preceded by a re-read, only to
+  know the row is still there and who wrote it. Account-deletion requests are recognised by
+  the text switch-food's Settings prefills. The included `_User` is narrowed at the
+  boundary. Rules in `lib/ops/support.ts`, I/O in `lib/services/support.ts`.
+- **Support is the one screen with no region.** Every staff account reads every message —
+  there is no region filter, nothing is pinned, and the bell, the alert runner, the reader's
+  history and a driver's deliveries all follow. A `Message` has no region of its own, so the
+  only one it could have is its sender's `city`, reachable only as a `matchesQuery` over
+  `_User`, which has no index on it: the subquery timed out and the inbox came up empty. It
+  was never a permission either (the `Message` class is readable by any Staff session), and
+  support is how ops and drivers talk while a delivery runs, so whoever is on the console
+  answers. The sender's region is still shown in the reader, as a fact about them. If it
+  ever has to come back it is a column on `Message`, written at save time
+  (`docs/backend-performance.md` §2), never a sub-query.
 - **Support is how ops and drivers talk while a delivery runs**, and the screen is built
   around that: a driver writes what the order really came to ("1600", "he added a dish"),
   ops correct the order and say so. What follows from it:
@@ -251,9 +259,9 @@ switch-food / switch-driver / switch-manager, switch-dashboard and switch-financ
   seen, shared between tabs through localStorage, so nothing is missed on a reload, nothing
   repeats when leadership moves, and a clock that is minutes out can't skip a message; a
   cursor older than ten minutes means the console was shut, and its backlog stays in the
-  bell rather than arriving as a burst. Region and read state are decided in the browser
-  (`isInScope` / `isUnread`), which keeps the tick to a few `Message` rows instead of the
-  `_User`-by-city subquery the inbox pays for. It announces with a toast, the dashboard's
+  bell rather than arriving as a burst. It alerts on every region, as the inbox reads every
+  region, and read state is decided in the browser (`isUnread`), which keeps the tick to a
+  few `Message` rows. It announces with a toast, the dashboard's
   own `alert.mp3` and, when the tab isn't focused, a desktop notification; sound and
   notifications are switched per browser from the bell. The **bell** in the shell header
   (`components/support/support-bell.tsx`) is the unread inbox, not a second log: it shares

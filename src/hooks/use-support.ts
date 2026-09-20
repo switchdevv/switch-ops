@@ -52,10 +52,10 @@ export function useSupportMessages(
  * The number on the Unread tab, with the live marks — it should drop the moment a message
  * is opened.
  *
- * Also the number on the shell's bell, which asks for the same filters (none, beyond the
- * account's region) and therefore shares this query: one request answers both while the
- * inbox is open. `intervalMs` is what differs — the bell re-reads slowly, because arrivals
- * reach it from the alert runner rather than from this timer (see components/support-bell.tsx).
+ * Also the number on the shell's bell, which asks for the same filters (none at all) and
+ * therefore shares this query: one request answers both while the inbox is open.
+ * `intervalMs` is what differs — the bell re-reads slowly, because arrivals reach it from
+ * the alert runner rather than from this timer (see components/support-bell.tsx).
  */
 export function useSupportUnreadCount(
   filters: SupportFilters,
@@ -86,27 +86,27 @@ export function useSupportUnreadCount(
 
 /** The open message. Seeded from the list's own row when it is on the page, so the reader
  * fills in at once; read on its own for a pasted link. */
-export function useSupportMessage(id: string, pinnedRegion: string, fromList: SupportMessage | undefined) {
+export function useSupportMessage(id: string, fromList: SupportMessage | undefined) {
   return useQuery({
-    queryKey: queryKeys.support.detail(id, pinnedRegion),
-    queryFn: () => getMessage(id, pinnedRegion),
+    queryKey: queryKeys.support.detail(id),
+    queryFn: () => getMessage(id),
     placeholderData: fromList,
     enabled: id.length > 0,
   });
 }
 
-export function useSenderMessages(userId: string, pinnedRegion: string) {
+export function useSenderMessages(userId: string) {
   return useQuery({
-    queryKey: queryKeys.support.history(userId, pinnedRegion),
-    queryFn: () => listSenderMessages(userId, pinnedRegion),
+    queryKey: queryKeys.support.history(userId),
+    queryFn: () => listSenderMessages(userId),
     enabled: userId.length > 0,
   });
 }
 
-export function useSenderOrders(userId: string, pinnedRegion: string, isEnabled = true) {
+export function useSenderOrders(userId: string, isEnabled = true) {
   return useQuery({
-    queryKey: queryKeys.support.orders(userId, pinnedRegion),
-    queryFn: () => listSenderOrders(userId, pinnedRegion),
+    queryKey: queryKeys.support.orders(userId),
+    queryFn: () => listSenderOrders(userId),
     enabled: isEnabled && userId.length > 0,
     staleTime: 60_000,
   });
@@ -120,10 +120,10 @@ export function useSenderOrders(userId: string, pinnedRegion: string, isEnabled 
  * `refetchOnWindowFocus`), and an edit made from the reader re-reads it by hand — which is
  * what a dispatcher correcting a total is waiting to see.
  */
-export function useSenderDeliveries(driverId: string, before: string, pinnedRegion: string, isEnabled = true) {
+export function useSenderDeliveries(driverId: string, before: string, isEnabled = true) {
   return useQuery({
-    queryKey: queryKeys.support.deliveries(driverId, before, pinnedRegion),
-    queryFn: () => listSenderDeliveries(driverId, before, pinnedRegion),
+    queryKey: queryKeys.support.deliveries(driverId, before),
+    queryFn: () => listSenderDeliveries(driverId, before),
     enabled: isEnabled && driverId.length > 0 && before.length > 0,
     staleTime: 30_000,
   });
@@ -134,7 +134,7 @@ export function useSenderDeliveries(driverId: string, before: string, pinnedRegi
 export function useDeleteMessage() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, pinnedRegion }: { id: string; pinnedRegion: string }) => deleteMessage(id, pinnedRegion),
+    mutationFn: ({ id }: { id: string }) => deleteMessage(id),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.support.all }),
   });
 }
@@ -142,7 +142,7 @@ export function useDeleteMessage() {
 /** A push changes nothing the inbox reads, so nothing is re-read after it. */
 export function useReplyToMessage() {
   return useMutation({
-    mutationFn: (reply: { id: string; app: SenderApp; body: string; pinnedRegion: string }) =>
-      replyToMessage(reply.id, reply.app, reply.body, reply.pinnedRegion),
+    mutationFn: (reply: { id: string; app: SenderApp; body: string }) =>
+      replyToMessage(reply.id, reply.app, reply.body),
   });
 }

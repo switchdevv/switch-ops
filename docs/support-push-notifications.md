@@ -45,14 +45,15 @@ So ops needs a **slot of its own that only ever carries support**.
 In `cloud/message/message.js`, keep the existing `pushToken.staff` push exactly as it is —
 the dashboard depends on it — and add a second one to `pushToken.ops`, with the ops scope:
 
-- **Admins get every region.** That is what an admin sees in the ops inbox, and the console
-  alerts them accordingly.
-- **Staff get the sender's `city`**, and only with `opsAccess === true` (see
-  `ops-access-backend.md`; a staff account without the grant can't open the console at all).
+- **Every message, to every console account** — no region test. The ops inbox has none
+  (`lib/services/support.ts`): every staff account reads every message, and the in-console
+  alerts already follow that, so a push scoped by the sender's `city` would be narrower than
+  what the console itself shows.
+- **Only accounts with `opsAccess === true`**, plus admins (see `ops-access-backend.md`; a
+  staff account without the grant can't open the console at all). That is the whole scope.
 - **A sender with no `city`** currently means *nobody* is notified — the trigger returns
-  early on `req.user.get('city')`. Ops shows those messages to admins, so admins should be
-  pushed for them too.
-- `Parse.Config`'s `sendNotifsToAll` should keep overriding the region test, as it does today.
+  early on `req.user.get('city')`. The ops slot must not inherit that early return: those
+  messages are in the inbox like any other.
 
 Payload, so a click lands on the message:
 

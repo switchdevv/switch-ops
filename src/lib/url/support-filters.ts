@@ -27,11 +27,15 @@ export type SupportRange = (typeof SUPPORT_RANGES)[number];
 /** Everything, like the dashboard — a support message is often answered days later. */
 export const DEFAULT_SUPPORT_RANGE: SupportRange = 'all';
 
+/**
+ * No region. Unlike every other list in this console, the inbox is not pinned to a staff
+ * account's own region and offers no region filter: a `Message` has none of its own, the
+ * sender's `city` is only reachable through an unindexed sub-query that times out, and
+ * support is answered by whoever is on the console. See lib/services/support.ts.
+ */
 export type SupportFilters = {
   query: string;
   field: SupportSearchField;
-  /** City objectId of the sender's region, or '' for any. */
-  region: string;
   app: SenderApp | '';
   range: DateRange;
   /** Only messages this account hasn't opened on this browser. */
@@ -41,7 +45,6 @@ export type SupportFilters = {
 const KEYS = {
   query: 'q',
   field: 'by',
-  region: 'region',
   app: 'app',
   range: 'range',
   unread: 'unread',
@@ -61,7 +64,6 @@ export function emptySupportFilters(): SupportFilters {
   return {
     query: '',
     field: 'fullname',
-    region: '',
     app: '',
     range: resolveRange(DEFAULT_SUPPORT_RANGE),
     unread: false,
@@ -75,7 +77,6 @@ export function parseSupportFilters(params: URLSearchParams): SupportFilters {
   return {
     query: (params.get(KEYS.query) ?? '').trim(),
     field: oneOf(params.get(KEYS.field), SUPPORT_SEARCH_FIELDS) || 'fullname',
-    region: params.get(KEYS.region) ?? '',
     app: oneOf(params.get(KEYS.app), SENDER_APPS),
     range: resolveRange(isSupportRange(preset) ? preset : DEFAULT_SUPPORT_RANGE),
     unread: params.get(KEYS.unread) === '1',
@@ -98,7 +99,6 @@ export function serializeSupportFilters(filters: SupportFilters, page: number, s
     params.set(KEYS.query, filters.query);
     if (filters.field !== 'fullname') params.set(KEYS.field, filters.field);
   }
-  if (filters.region) params.set(KEYS.region, filters.region);
   if (filters.app) params.set(KEYS.app, filters.app);
   if (filters.range.preset !== DEFAULT_SUPPORT_RANGE) params.set(KEYS.range, filters.range.preset);
   if (filters.unread) params.set(KEYS.unread, '1');
@@ -120,21 +120,10 @@ export function supportUnreadHref(): string {
   return `${SUPPORT_PATH}?${KEYS.unread}=1`;
 }
 
-/**
- * Pins a staff account's inbox to its own region — applied where the filters are read, as
- * everywhere else in this console, and with the same caveat: a UX boundary. The `Message`
- * class permissions let any Staff session read every row.
- */
-export function confineSupportToRegion(filters: SupportFilters, pinnedRegion: string): SupportFilters {
-  if (!pinnedRegion || filters.region === pinnedRegion) return filters;
-  return { ...filters, region: pinnedRegion };
-}
-
 /** The number on "Clear all". Unread is a view, not a filter, so it isn't counted. */
-export function activeSupportFilterCount(filters: SupportFilters, pinnedRegion = ''): number {
+export function activeSupportFilterCount(filters: SupportFilters): number {
   let count = 0;
   if (filters.query) count += 1;
-  if (filters.region && filters.region !== pinnedRegion) count += 1;
   if (filters.app) count += 1;
   if (filters.range.preset !== DEFAULT_SUPPORT_RANGE) count += 1;
   return count;

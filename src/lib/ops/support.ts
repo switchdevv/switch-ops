@@ -249,16 +249,3 @@ export function advanceCursor(cursor: AlertCursor, rows: SupportMessage[]): Aler
   // The moment didn't move, so the ids already parked there are still in the way.
   return { at, ids: at === cursor.at ? [...new Set([...cursor.ids, ...ids])] : ids };
 }
-
-/**
- * Whether a message is one this account is meant to see — the inbox's region rule, applied
- * to a row already in hand rather than sent to the server as `senderParams`' `matchesQuery`.
- *
- * `pinnedRegion` is `''` for an admin, who sees every region here, as in the inbox. A staff
- * account sees its own, and a message whose sender came back as a bare pointer (the account
- * is gone, or can't be read) belongs to no region, so it is left to admins.
- */
-export function isInScope(message: Pick<SupportMessage, 'user'>, pinnedRegion: string): boolean {
-  if (!pinnedRegion) return true;
-  return senderOf(message)?.city?.objectId === pinnedRegion;
-}

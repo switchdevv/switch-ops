@@ -7,12 +7,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAccess } from '@/hooks/use-access';
 import { isAlertChannelEnabled } from '@/hooks/use-support-alert-prefs';
 import { useReadMarks } from '@/hooks/use-support-read-marks';
-import { pinnedRegionId } from '@/lib/auth/access';
 import { useI18n } from '@/lib/i18n/provider';
 import { playAlertSound, primeAlertSound, showDesktopNotification } from '@/lib/media/alerts';
 import {
   advanceCursor,
-  isInScope,
   isUnread,
   previewOf,
   senderOf,
@@ -111,8 +109,9 @@ export function SupportAlerts() {
   const { region: scope, role, account } = useAccess();
 
   const accountId = account?.objectId ?? '';
+  // The console's own gate, not a filter on what is alerted: an unassigned staff account
+  // never reaches a page at all (components/require-auth.tsx).
   const isEnabled = role !== null && scope.kind !== 'unassigned' && accountId.length > 0;
-  const pinnedRegion = pinnedRegionId(scope);
 
   const { marks } = useReadMarks(accountId);
 
@@ -251,9 +250,8 @@ export function SupportAlerts() {
             // the same messages a second time.
             saveCursor(accountId, cursor);
 
-            const fresh = rows.filter(
-              (row) => isInScope(row, pinnedRegion) && isUnread(latest.current.marks, row),
-            );
+            // Every region: the inbox this feeds has none either (lib/services/support.ts).
+            const fresh = rows.filter((row) => isUnread(latest.current.marks, row));
             if (fresh.length === 0) return;
 
             refreshBell();
@@ -364,7 +362,7 @@ export function SupportAlerts() {
       // login screen.
       toast.clear();
     };
-  }, [isEnabled, accountId, pinnedRegion, queryClient]);
+  }, [isEnabled, accountId, queryClient]);
 
   return null;
 }

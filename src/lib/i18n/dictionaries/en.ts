@@ -59,7 +59,7 @@ export const en = {
       anyApp: 'Any app',
       period: 'Period',
       searchPlaceholder: 'Search the inbox…',
-      regionLocked: 'Your assigned region — messages from people outside it are not shown.',
+      everyRegion: 'Every region — support is answered by whoever is on the console.',
       markAllRead: 'Mark all as read',
       readHint: 'Read and unread are kept in this browser, for your account only.',
     },

@@ -8,7 +8,6 @@ import { useSupportMessages, useSupportUnreadCount } from '@/hooks/use-support';
 import { useAlertChannel } from '@/hooks/use-support-alert-prefs';
 import { useReadMarks } from '@/hooks/use-support-read-marks';
 import { useNow } from '@/hooks/use-now';
-import { pinnedRegionId } from '@/lib/auth/access';
 import { useI18n } from '@/lib/i18n/provider';
 import {
   desktopNotificationPermission,
@@ -26,7 +25,6 @@ import {
   type ReadMarks,
 } from '@/lib/ops/support';
 import {
-  confineSupportToRegion,
   emptySupportFilters,
   supportMessageHref,
   supportUnreadHref,
@@ -44,28 +42,24 @@ import type { SupportMessage } from '@/types/message';
  * disagree about what is outstanding would be worse than one. So opening a message from
  * anywhere empties it, and "Mark all as read" clears it, exactly as the inbox does.
  *
- * The count is the inbox's own query, asked with no filters beyond the account's region, so
- * while /support is open the two share a single request and can't disagree. The list is
- * only asked for while the popover is open.
+ * The count is the inbox's own query, asked with no filters at all — the inbox has no
+ * region either (lib/services/support.ts) — so while /support is open the two share a
+ * single request and can't disagree. The list is only asked for while the popover is open.
  *
  * It is also where this browser's alerts are turned down: the sound, and the operating
  * system's notifications (components/support-alerts.tsx raises both).
  */
 export function SupportBell() {
   const { t, tCount, format } = useI18n();
-  const { region, account } = useAccess();
+  const { account } = useAccess();
 
-  const pinnedRegion = pinnedRegionId(region);
   const accountId = account?.objectId ?? '';
   const { marks, markAllRead } = useReadMarks(accountId);
 
   const [isOpen, setIsOpen] = useState(false);
   const now = useNow(60_000);
 
-  const filters = useMemo(
-    () => confineSupportToRegion(emptySupportFilters(), pinnedRegion),
-    [pinnedRegion],
-  );
+  const filters = useMemo(() => emptySupportFilters(), []);
 
   // Slow on its own: arrivals reach this through the alert runner, which invalidates the
   // query the moment it sees one. The timer is only here to notice what happens elsewhere —
