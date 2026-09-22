@@ -1,3 +1,4 @@
+import { declineOf } from '@/lib/ops/decline';
 import type { ParseDateJSON } from '@/types/parse';
 import type { DropReason, QueueEntry, QueueState } from '@/types/queue';
 import type { DriverParty } from '@/types/user';
@@ -114,7 +115,23 @@ export function entryVerdict(entry: QueueEntry): EntryVerdict {
   const carrier = order.driver?.objectId;
   if (carrier && carrier !== driverId) return { kind: 'drop', reason: 'assignedElsewhere' };
   if (carrier === driverId) return { kind: 'accept' };
+  if (wasDeclined(entry)) return { kind: 'drop', reason: 'declined' };
   return { kind: 'keep' };
+}
+
+/**
+ * The row was sent, and its driver has declined it since. Only a decline dated after the
+ * send counts: `assignDriver` forgets the driver's earlier one, but a row claimed a moment
+ * ago may still see it until its own send lands.
+ */
+function wasDeclined(entry: QueueEntry): boolean {
+  const driverId = entry.driver?.objectId;
+  if (entry.state === 'queued' || !driverId) return false;
+  const decline = declineOf(entry.order, driverId);
+  if (!decline) return false;
+  const sentAt = timeOf(entry.dispatchedAt) ?? timeOf(entry.claimedAt);
+  const declinedAt = timeOf(decline.declinedAt);
+  return sentAt !== null && declinedAt !== null && declinedAt >= sentAt;
 }
 
 /** A console is calling `assignDriver` for it right now. */

@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@heroui/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useLogout, useSession } from '@/hooks/use-session';
 import { useAccess } from '@/hooks/use-access';
 import { useI18n } from '@/lib/i18n/provider';
@@ -49,6 +50,20 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     hasSignedOut.current = true;
     signOut();
   }, [isDeadSession, signOut]);
+
+  // The access row is cached, so a dead token rarely fails that check — it fails the
+  // polling screens instead (drivers, queue, orders), which would otherwise keep
+  // retrying with it every few seconds behind an "expired" banner. Any query saying so
+  // means the same thing: sign out.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    return queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'updated' || event.action.type !== 'error') return;
+      if (!isSessionExpired(event.action.error) || hasSignedOut.current) return;
+      hasSignedOut.current = true;
+      signOut();
+    });
+  }, [queryClient, signOut]);
 
   if (isPending || !user || access.isPending || isDeadSession) {
     return <FullPageLoader onRetry={user ? access.refetch : undefined} canSignOut={!!user} />;

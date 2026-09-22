@@ -70,6 +70,8 @@ import {
   StoreIcon,
   UserIcon,
 } from '@/components/icons';
+import { declinesOf } from '@/lib/ops/decline';
+import type { DriverDecline } from '@/types/order';
 import { driverNameOf, QueueOrderRow, Tag, type QueueHandlers } from './dispatch-queue';
 import { HoursText } from './restaurant-hours-text';
 import type { DispatchRequest } from '@/hooks/use-dispatch';
@@ -167,10 +169,23 @@ function OrderDetail({
   const canAssign = isAssignable(order);
   const isPickup = row.deliveryType !== 'delivery';
 
-  const candidates = useMemo(
-    () => (canAssign ? rankDrivers(order.pickup, model.drivers) : []),
-    [canAssign, order.pickup, model.drivers],
+  // Who has already said no to this order, by driver. Only while it can be assigned:
+  // after that, nobody is choosing.
+  const declines = useMemo(
+    () => new Map(canAssign ? declinesOf(row).map((decline) => [decline.driverId, decline]) : []),
+    [canAssign, row],
   );
+
+  // Nearest first, but a driver who declined goes after everyone who hasn't: they are the
+  // last people to try, not people to hide, since ops may still talk one round.
+  const candidates = useMemo(() => {
+    if (!canAssign) return [];
+    const ranked = rankDrivers(order.pickup, model.drivers);
+    return [
+      ...ranked.filter(({ item }) => !declines.has(item.id)),
+      ...ranked.filter(({ item }) => declines.has(item.id)),
+    ];
+  }, [canAssign, order.pickup, model.drivers, declines]);
 
   // Everyone on a job, as the other way to get this order out: behind them, in turn.
   // Not the driver it is already lined up behind.
@@ -303,6 +318,7 @@ function OrderDetail({
               {t('dispatch.detail.noDriverYet')}
             </p>
           )}
+          {!driver && declines.size > 0 && <DeclineSummary declines={[...declines.values()]} now={now} />}
         </Panel>
       )}
 
@@ -315,6 +331,7 @@ function OrderDetail({
           orderId={order.id}
           pending={pending}
           onRequest={onRequest}
+          declines={declines}
           notice={order.phase === 'awaitingRestaurant' ? t('dispatch.detail.notAcceptedYet') : undefined}
         />
       )}
@@ -909,6 +926,7 @@ function CandidateDrivers({
   orderId,
   pending,
   onRequest,
+  declines,
   notice,
 }: {
   candidates: Ranked<DispatchDriver>[];
@@ -918,6 +936,8 @@ function CandidateDrivers({
   orderId: string;
   pending: DispatchRequest | null;
   onRequest: (request: DispatchRequest) => void;
+  /** Drivers who declined this order, by id. They come last in `candidates`. */
+  declines: ReadonlyMap<string, DriverDecline>;
   /** Shown above the list — the caveat that this order isn't accepted yet. */
   notice?: string;
 }) {
@@ -967,6 +987,15 @@ function CandidateDrivers({
                           })}`
                         : ''}
                     </span>
+                    {/* Its own line, in the danger tone, so it reads at a glance while the
+                        distance above stays where it is on every other row. */}
+                    {declines.has(item.id) && (
+                      <span className="text-caption text-danger-soft-foreground tabular truncate font-bold">
+                        {t('dispatch.detail.declinedAgo', {
+                          ago: format.relative(declines.get(item.id)!.declinedAt, now),
+                        })}
+                      </span>
+                    )}
                   </span>
                   {item.isStale && <SignalOffIcon aria-hidden className="text-warning-soft-foreground size-4 shrink-0" />}
                 </button>
@@ -993,6 +1022,32 @@ function CandidateDrivers({
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * Who declined this order, in one line: the latest by name, the rest as a count, and every
+ * name on hover. The list below says it per driver; this is the order-level answer to
+ * "has anyone been asked?".
+ */
+function DeclineSummary({ declines, now }: { declines: DriverDecline[]; now: number }) {
+  const { t, tCount, format } = useI18n();
+  const [latest] = declines;
+  if (!latest) return null;
+  const name = latest.driverName ?? t('common.none');
+
+  return (
+    <div
+      className="text-caption flex flex-col gap-0.5 px-0.5"
+      title={declines.map((decline) => decline.driverName ?? t('common.none')).join(', ')}
+    >
+      <p className="text-danger-soft-foreground font-bold">
+        {declines.length === 1
+          ? t('dispatch.detail.declinedOne', { driver: name, ago: format.relative(latest.declinedAt, now) })
+          : tCount('dispatch.detail.declinedMany', declines.length - 1, { driver: name })}
+      </p>
+      <p className="text-faint">{t('dispatch.detail.declinedHint')}</p>
+    </div>
   );
 }
 

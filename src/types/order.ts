@@ -150,6 +150,14 @@ export type Order = ParseObjectJSON & {
   opsCustomerCall?: OrderCall;
   opsRestaurantCall?: OrderCall;
 
+  /**
+   * Every driver who turned this order down while it was open, keyed by driver id. Written
+   * by the server's `declineDriver` (switch-server-v2, D-23). Sending the order to one of
+   * them again forgets theirs, so each entry is a "no" to the latest offer they had. Read
+   * through lib/ops/decline.ts.
+   */
+  driverDeclines?: Record<string, { name?: unknown; at?: unknown }>;
+
   restaurant?: ParsePointer<'Restaurant'>;
   user?: ParsePointer<'_User'>;
   driver?: ParsePointer<'_User'>;
@@ -157,6 +165,14 @@ export type Order = ParseObjectJSON & {
   userAddress?: ParsePointer<'Address'>;
   promo?: ParsePointer<'Promo'>;
   food?: ParsePointer<'Food'>[];
+};
+
+/** A driver's "no" to an order they were sent, as read. `driverName` is copied at the time. */
+export type DriverDecline = {
+  driverId: string;
+  driverName: string | null;
+  /** ISO time the driver declined. */
+  declinedAt: string;
 };
 
 /** What a call came to: the person agreed (the customer confirmed, the restaurant is

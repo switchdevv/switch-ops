@@ -1,8 +1,9 @@
 # Switch Ops access control — backend requirements
 
 **Audience:** whoever owns the Parse Server behind `api.switchfood.net`.
-**Status:** the console (this repo) is wired end to end. Everything below is still
-missing on the server. It is the same design as switch-finance's
+**Status:** the console (this repo) is wired end to end. §2 and §3 are built in
+switch-server-v2 (`src/cloud/functions/staff-access.ts`, `beforeSave _User`, D-22) and ship with
+it; legacy switch-server never gets them. It is the same design as switch-finance's
 `docs/finance-access-backend.md`, for a second field, and the two are best shipped together.
 
 ## What the console does

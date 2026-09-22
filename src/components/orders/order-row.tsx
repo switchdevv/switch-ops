@@ -4,6 +4,7 @@ import { useId, useState } from 'react';
 import { useI18n } from '@/lib/i18n/provider';
 import { shortId, splitPhones } from '@/lib/format';
 import { basketSize, readBasket } from '@/lib/ops/basket';
+import { declinesOf } from '@/lib/ops/decline';
 import { showsCalls } from '@/lib/ops/order-calls';
 import { canConfirm } from '@/lib/ops/order-edit';
 import {
@@ -67,6 +68,8 @@ export function OrderRowItem({
   const isPickup = order.deliveryType === 'pickup';
   const items = basketSize(readBasket(order));
   const needsDriver = isUnassignedDelivery(order);
+  // Only while it needs a driver: once somebody has it, who said no before is history.
+  const declines = needsDriver ? declinesOf(order) : [];
   // The first of the customer's numbers — the rest, and the dialable links, are in the
   // detail. A row that showed 'x / y' would spend a third of its caption line on the
   // one customer in a hundred who registered two phones.
@@ -212,6 +215,21 @@ export function OrderRowItem({
                   {t('orders.row.driver')}: {order.driver.fullname ?? '—'}
                 </span>
               ) : null}
+
+              {/* Beside the driver state, never instead of it, and quiet: a crowd of
+                  declines is one small count. The names are on the live map, next to
+                  each driver, where the next pick is made. */}
+              {declines.length > 0 && (
+                <span
+                  title={declines.map((decline) => decline.driverName ?? t('common.none')).join(', ')}
+                  className="text-danger-soft-foreground inline-flex items-center gap-1 whitespace-nowrap"
+                >
+                  <BikeIcon aria-hidden className="size-3" />
+                  {declines.length === 1
+                    ? t('orders.row.declinedBy', { driver: declines[0]!.driverName ?? t('common.none') })
+                    : tCount('orders.row.declinedCount', declines.length)}
+                </span>
+              )}
 
               {isStale && (
                 <span className="bg-warning-soft text-warning-soft-foreground inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-bold whitespace-nowrap">

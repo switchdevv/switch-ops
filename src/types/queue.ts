@@ -34,6 +34,9 @@ export type DropReason =
   | 'canceled'
   | 'delivered'
   | 'assignedElsewhere'
+  /** The driver declined the order after it was sent to them (the server's
+   * `declineDriver`), so it no longer holds their line. */
+  | 'declined'
   /** Ops took the driver off the order: it needs a driver again, not a line. */
   | 'unassigned'
   /** Ops deactivated the driver, so nothing may be sent to them: the orders behind them
