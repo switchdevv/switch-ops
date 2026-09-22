@@ -1,0 +1,77 @@
+# Checks every pull request. deploy-staging.yml calls it again before each staging deploy and then
+# deploys the exact out/ built here (`upload-build`).
+name: ci
+
+on:
+  pull_request:
+  workflow_call:
+    inputs:
+      upload-build:
+        description: Upload out/ as the `web-build` artifact for the deploy job.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash # explicit: adds pipefail
+
+concurrency:
+  # Distinct from the caller's group when called, so the two never wait on each other. On pull
+  # requests a new push cancels the run it replaces.
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      # The staging bundle, built with .env.staging. `next build` type-checks as it goes, and the
+      # script then refuses a bundle that contains a production value.
+      - run: npm run build:staging
+      # Report only: `ws` is the Parse SDK's Node transport and never reaches the browser, and
+      # maplibre-gl stays on v5 on purpose (v6 loads its worker from a separate file, which
+      # Turbopack's static export doesn't ship). A red audit would block every staging deploy.
+      - name: Audit production dependencies (report only)
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high
+      - name: Keep the build for the deploy job
+        if: inputs.upload-build
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-build
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # The gitleaks CLI itself (no license needed), pinned to its release checksum.
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP"
+      - name: Scan the whole git history
+        run: '"$RUNNER_TEMP/gitleaks" git --redact --no-banner --verbose .'

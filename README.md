@@ -1,51 +1,77 @@
 # switch-ops
 
-The Switch operations console — the live view of orders for the ops team.
+The Switch operations console: the orders board, the live dispatch map, and the drivers,
+managers, restaurants, customers, support and access pages. Admins can always sign in; other
+staff need an admin to give them access.
 
-## Running it
+## Environments
+
+| | Local | Staging | Production |
+|---|---|---|---|
+| Console | http://localhost:3020 | https://switchfood-staging-ops.web.app | https://switch-ops.web.app |
+| Server | switch-server-v2 on your machine | switch-server-v2 on staging | `api.switchfood.net` |
+| Data | test data | test data | **real orders, drivers and customers** |
+| How it gets there | `npm run dev:local` | merge into `stg` | `npm run deploy`, by hand |
+
+## Run it locally
+
+You need Node 24, Docker Desktop, and the `switch-server-v2` repository next to this one, set up
+once as its onboarding guide says (`docs/00-onboarding.md` there).
 
 ```bash
 npm install
-cp .env.example .env.local   # already present in a fresh checkout
-npm run dev                  # http://localhost:3020
+cd ../switch-server-v2
+pnpm dev:all --only ops    # local server + test data + this console on :3020
 ```
 
-Ports across the Switch web apps: 3000 switch-finance, 3010 switch-dashboard,
-3020 switch-ops.
+Sign in as `ops` or `admin`, password `switch-dev`. If the local server is already running,
+`npm run dev:local` here starts only the console.
 
-## Deploying
+`npm run dev` (without `:local`) talks to the **production** server. Don't use it to try things
+out.
 
-```bash
-npm run deploy
-```
+## Ship a change to staging
 
-Builds a static export into `out/` and publishes it to the `switch-ops` Firebase Hosting
-site in project `switch-proj`. The site must exist first:
-`firebase hosting:sites:create switch-ops`.
+1. Start from an up-to-date `stg`:
 
-## What's here
+   ```bash
+   git switch stg && git pull
+   git switch -c fix/short-description
+   ```
 
-- **Orders** (`/orders`) — the board: every order on the platform, newest first, with the
-  pipeline, filters and a detail per row.
-- **Live map** (`/map`) — the dispatch screen: every open order, its restaurant, its
-  customer and every driver on one map, with the panel that assigns them.
-- **Drivers** (`/drivers`) — the fleet: add a driver, edit their profile, activate or
-  deactivate them, reset a password, send them a message, and see a driver's deliveries and
-  cash balance for a period.
-- **Support** (`/support`) — the inbox for messages sent from the customer, driver and
-  restaurant apps: read them with the sender's region, apps, recent orders and earlier
-  messages beside them, then call, email, reply by push notification or delete.
-- **Access** (`/access`, admins only) — which staff accounts may use the console. Admins
-  always can; everyone else needs an admin to switch their access on. Needs the
-  `setOpsAccess` cloud function on the server first — see `docs/ops-access-backend.md`.
+2. Make the change and try it locally. Then run what CI runs:
 
-Everything reads the shared Parse backend from the browser; see `AGENTS.md` for the
-constraints that follow from that.
+   ```bash
+   npm run lint
+   npm run build:staging    # type check, staging build, and no production address in it
+   ```
 
-## The map's tiles
+3. Push and open a pull request into `stg`:
 
-The base map is [OpenFreeMap](https://openfreemap.org) — OpenStreetMap vector tiles, no
-API key, no account, free for commercial use — drawn by MapLibre GL. The two style URLs
-are the only place the provider is named (`src/lib/map/basemap.ts`); swapping to MapTiler,
-Stadia or a self-hosted planetiler is an edit to that constant. If the tiles are
-unreachable the panel keeps working, including assigning drivers.
+   ```bash
+   git push -u origin fix/short-description
+   gh pr create --base stg --fill
+   ```
+
+   CI checks the pull request: lint, type check, the staging build, a production-address check,
+   a dependency audit and a secret scan. Fix anything red and push again.
+
+4. Merge. Every merge into `stg` deploys to staging on its own in a few minutes
+   (`gh run watch`). Don't push straight to `stg`: that deploys without review.
+
+5. Test on https://switchfood-staging-ops.web.app with the staging accounts (ask the team for
+   the password).
+
+If the change needs a server change too, ship the server to staging first (switch-server-v2's
+own `stg`), then the console.
+
+**Production** is still deployed by hand with `npm run deploy`. A pipeline from `main` will come
+later; nothing deploys from `main` today.
+
+## Good to know
+
+- Staging's one-time setup, rollback and troubleshooting: [docs/staging.md](docs/staging.md).
+- A new `NEXT_PUBLIC_*` setting needs its staging value in `.env.staging`, or the staging build
+  fails.
+- The map uses [OpenFreeMap](https://openfreemap.org) tiles: no key, no account.
+- Code conventions and the reasons behind them: [AGENTS.md](AGENTS.md).
