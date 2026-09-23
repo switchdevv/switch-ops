@@ -280,6 +280,45 @@ export const fr: Dictionary = {
     },
   },
 
+  appAccess: {
+    action: 'Accès aux applications',
+    title: 'Accès aux applications — {name}',
+    subtitle: 'Les applications Switch auxquelles ce compte peut se connecter.',
+    loading: 'Chargement du compte…',
+    loadFailed: "Impossible d'ouvrir ce compte",
+    apps: {
+      driver: 'Application livreur',
+      driverHint: "Peut se connecter à l'application livreur et recevoir des livraisons.",
+      manager: 'Application gérant de restaurant',
+      managerHint: "Peut se connecter à l'application gérant dès qu'un restaurant lui est associé.",
+      managerLocked: "Gère {restaurant}. Retirez-le d'abord du restaurant pour enlever cet accès.",
+      staff: 'Staff',
+      staffHint: 'Rejoint le rôle Staff — les consoles du staff, une fois une console accordée.',
+    },
+    customerNote: "L'application client ne demande aucun accès : elle est ajoutée à la première connexion.",
+    openManager: 'Ouvrir sa page gérant',
+    opsAccess: 'Donner aussi accès à Switch Ops',
+    opsAccessHint: 'Modifiable plus tard sur la page Accès.',
+    grantManager: "Il lui faut encore un restaurant — associez-en un depuis la page Gérants avant que l'application s'ouvre.",
+    revokeDriver:
+      "Il perd l'application livreur à son prochain démarrage. Les commandes en file derrière lui reviennent à « sans livreur ».",
+    revokeStaff: "Le retire de l'équipe : hors du rôle Staff, accès aux consoles retirés et déconnecté partout.",
+    phone: 'Téléphone',
+    phoneHint: "Ce compte n'en a pas, et il est requis pour enregistrer. 0550 12 34 56 ou +213…",
+    region: 'Région',
+    chooseRegion: 'Choisir une région',
+    errors: {
+      phone: 'Saisissez un numéro de téléphone valide.',
+      region: 'Choisissez une région.',
+      profile: "Ce compte n'a pas de nom ou d'e-mail. Complétez d'abord son profil.",
+    },
+    cancel: 'Annuler',
+    save: 'Enregistrer',
+    saving: 'Enregistrement…',
+    saved: "L'accès aux applications de {name} a été mis à jour.",
+    opsGrantFailed: "Il fait partie du staff, mais l'accès à Switch Ops n'a pas pu être donné — accordez-le sur la page Accès.",
+  },
+
   errors: {
     network: 'Serveur injoignable. Vérifiez votre connexion et réessayez.',
     timeout: "Le serveur n'a pas répondu à temps. L'action a peut-être abouti — vérifiez avant de réessayer.",
@@ -338,6 +377,11 @@ export const fr: Dictionary = {
       "Cette application n'est pas inscrite aux notifications sur son téléphone : la réponse n'a pas pu être envoyée — appelez-le ou écrivez-lui.",
     accessUnavailable:
       "Les changements d'accès ne sont pas encore activés sur le serveur — demandez à l'équipe plateforme de déployer `setOpsAccess`.",
+    appAccessChanged: 'Les applications de ce compte ont été modifiées depuis un autre écran entre-temps — rouvrez-le.',
+    appAccessNotFound: "Ce compte n'existe pas, ou vous ne pouvez pas le modifier.",
+    appAccessSelf: "C'est votre propre compte — demandez à un autre admin de changer ses applications.",
+    removeStaffUnavailable:
+      "Retirer quelqu'un du staff n'est pas encore possible sur ce serveur — il faut le nouveau serveur (`removeStaff`).",
     accessForbidden: 'Seuls les admins peuvent modifier les accès.',
     callChanged: 'Cet appel a été modifié depuis un autre écran entre-temps — vérifiez-le à nouveau.',
     callsMissing:

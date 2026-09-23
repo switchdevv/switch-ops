@@ -15,9 +15,10 @@ import type { MessageKey } from '@/lib/i18n/dictionary';
  * customer account, plus deleting one. `managers` is the same for a manager account, plus
  * giving it a restaurant or taking it off one. `access` is an admin granting or revoking a
  * staff account's Ops access on /access. `calls` is marking the customer or restaurant
- * call on an order, or taking a mark back.
+ * call on an order, or taking a mark back. `appAccess` is changing which apps an account may
+ * use — driver, manager, staff.
  */
-export type ErrorContext = 'login' | 'fetch' | 'dispatch' | 'queue' | 'order' | 'cancel' | 'calls' | 'catalogue' | 'drivers' | 'customers' | 'managers' | 'support' | 'access';
+export type ErrorContext = 'login' | 'fetch' | 'dispatch' | 'queue' | 'order' | 'cancel' | 'calls' | 'catalogue' | 'drivers' | 'customers' | 'managers' | 'support' | 'access' | 'appAccess';
 
 /** Thrown before marking a call, or taking a mark back, when the call is no longer as ops
  * saw it — marked or taken back from another console in the meantime. `calls` context. */
@@ -96,6 +97,16 @@ export const CUSTOMER_IS_SELF = 'CUSTOMER_IS_SELF';
 /** Thrown before deleting a customer who runs a restaurant — `deleteUsers` would delete the
  * restaurant too. */
 export const CUSTOMER_IS_MANAGER = 'CUSTOMER_IS_MANAGER';
+
+/** Thrown before changing an account's apps when they changed since the dialog read them. */
+export const APP_ACCESS_CHANGED = 'APP_ACCESS_CHANGED';
+
+/** Thrown before changing the apps of an account that doesn't exist, is outside a staff
+ * account's region, or is one a staff member may not touch — one answer for all three. */
+export const APP_ACCESS_NOT_FOUND = 'APP_ACCESS_NOT_FOUND';
+
+/** Thrown before the signed-in account changes its own apps. */
+export const APP_ACCESS_SELF = 'APP_ACCESS_SELF';
 
 /**
  * Maps whatever a Parse call threw to a dictionary key, not to a string.
@@ -249,6 +260,19 @@ export function parseErrorKey(error: unknown, context: ErrorContext): MessageKey
     const code = getErrorCode(error);
     if (code === 141 && /invalid function/i.test(message ?? '')) return 'errors.accessUnavailable';
     if (code === 119) return 'errors.accessForbidden';
+  }
+
+  // App access: this console's three guards, then the platform's. `ADMIN_REQUIRED` is
+  // switch-server-v2's refusal of a staff change from a non-admin (D-24); a `removeStaff`
+  // that isn't deployed is the legacy server, which has no way to take someone off the team.
+  if (context === 'appAccess') {
+    if (message === APP_ACCESS_CHANGED) return 'errors.appAccessChanged';
+    if (message === APP_ACCESS_NOT_FOUND) return 'errors.appAccessNotFound';
+    if (message === APP_ACCESS_SELF) return 'errors.appAccessSelf';
+    if (message === 'ADMIN_REQUIRED') return 'errors.accessForbidden';
+    if (message === 'PARAMS_MISSING') return 'errors.invalidData';
+    if (getErrorCode(error) === 141 && /invalid function/i.test(message ?? '')) return 'errors.removeStaffUnavailable';
+    if (getErrorCode(error) === 203 || /exists.*email/i.test(message ?? '')) return 'errors.emailTaken';
   }
 
   switch (getErrorCode(error)) {

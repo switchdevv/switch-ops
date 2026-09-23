@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { Alert, Button, Skeleton } from '@heroui/react';
+import { usePageInRange } from '@/hooks/use-page-in-range';
 import { useI18n } from '@/lib/i18n/provider';
 import { parseErrorKey } from '@/lib/parse/errors';
 import { InboxIcon } from '@/components/icons';
@@ -47,8 +48,15 @@ export function PagedList({
   children: ReactNode;
 }) {
   const { t, format } = useI18n();
+  const isPastEnd = usePageInRange({
+    page,
+    total,
+    pageSize,
+    isSettled: status === 'success' && !isPlaceholderData,
+    onPageChange,
+  });
 
-  if (status === 'pending') return <ListSkeleton />;
+  if (status === 'pending' || isPastEnd) return <ListSkeleton />;
 
   if (status === 'error') {
     return (

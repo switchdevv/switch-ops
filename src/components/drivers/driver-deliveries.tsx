@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { Alert, Button, Skeleton } from '@heroui/react';
 import { useDriverDeliveries } from '@/hooks/use-drivers';
@@ -14,9 +14,14 @@ import { parseErrorKey } from '@/lib/parse/errors';
 import { DRIVER_RANGES, type DriverPage, type DriverRange } from '@/lib/url/driver-filters';
 import { emptyFilters, ordersHref, serializeOrderFilters } from '@/lib/url/order-filters';
 import type { OrderRow } from '@/types/order';
+import { PaginationBar } from '@/components/ui/pagination-bar';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { StageChip } from '@/components/ui/stage-chip';
 import { ExternalLinkIcon } from '@/components/icons';
+
+/** Rows per page of the table. The whole period is still read at once — the totals above it
+ * add up every order — so paging is only how much of it is on screen. */
+const DELIVERY_PAGE_SIZE = 25;
 
 const RANGE_LABEL: Record<DriverRange, MessageKey> = {
   today: 'orders.range.today',
@@ -51,6 +56,14 @@ export function DriverDeliveries({
   const name = driver.row.fullname ?? driver.row.username ?? t('common.none');
   const orders = query.data?.results ?? [];
   const isTruncated = !!query.data && query.data.count > query.data.results.length;
+
+  // Back to the first page when the period changes, and never past the last one — a refresh
+  // can bring back fewer orders than the page was opened on.
+  const [paging, setPaging] = useState({ preset: page.preset, page: 1 });
+  const totalPages = Math.max(1, Math.ceil(orders.length / DELIVERY_PAGE_SIZE));
+  const tablePage = Math.min(paging.preset === page.preset ? paging.page : 1, totalPages);
+  const from = (tablePage - 1) * DELIVERY_PAGE_SIZE;
+  const pageRows = orders.slice(from, from + DELIVERY_PAGE_SIZE);
   const boardHref = `/orders${serializeOrderFilters(
     { ...emptyFilters(), query: driver.id, field: 'driver', range: resolveRange(page.preset) },
     1,
@@ -137,26 +150,46 @@ export function DriverDeliveries({
           {orders.length === 0 ? (
             <p className="text-body text-muted px-4 py-10 text-center sm:px-5">{t('drivers.deliveries.empty')}</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="text-caption w-full min-w-[46rem]">
-                <thead className="text-micro text-muted tracking-[0.1em] uppercase">
-                  <tr className="border-separator/70 border-b">
-                    <Th>{t('drivers.deliveries.order')}</Th>
-                    <Th>{t('drivers.deliveries.restaurant')}</Th>
-                    <Th>{t('orders.filters.stage')}</Th>
-                    <Th>{t('drivers.deliveries.payment')}</Th>
-                    <Th isNumeric>{t('drivers.deliveries.delivery')}</Th>
-                    <Th isNumeric>{t('drivers.deliveries.service')}</Th>
-                    <Th isNumeric>{t('drivers.deliveries.balance')}</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orders.map((order) => (
-                    <DeliveryRow key={order.objectId} order={order} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {totalPages > 1 && (
+                <div className="border-separator/70 text-caption text-muted tabular flex items-center justify-between gap-3 border-b px-4 py-2.5">
+                  <span>
+                    {t('orders.pager.showing', {
+                      from: format.number(from + 1),
+                      to: format.number(from + pageRows.length),
+                      total: format.number(orders.length),
+                    })}
+                  </span>
+                  <span>{t('orders.pager.pageOf', { page: tablePage, total: totalPages })}</span>
+                </div>
+              )}
+              <div className="overflow-x-auto">
+                <table className="text-caption w-full min-w-[46rem]">
+                  <thead className="text-micro text-muted tracking-[0.1em] uppercase">
+                    <tr className="border-separator/70 border-b">
+                      <Th>{t('drivers.deliveries.order')}</Th>
+                      <Th>{t('drivers.deliveries.restaurant')}</Th>
+                      <Th>{t('orders.filters.stage')}</Th>
+                      <Th>{t('drivers.deliveries.payment')}</Th>
+                      <Th isNumeric>{t('drivers.deliveries.delivery')}</Th>
+                      <Th isNumeric>{t('drivers.deliveries.service')}</Th>
+                      <Th isNumeric>{t('drivers.deliveries.balance')}</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.map((order) => (
+                      <DeliveryRow key={order.objectId} order={order} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <PaginationBar
+                page={tablePage}
+                totalPages={totalPages}
+                isFetching={false}
+                onChange={(next) => setPaging({ preset: page.preset, page: next })}
+              />
+            </>
           )}
         </div>
       )}

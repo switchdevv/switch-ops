@@ -40,6 +40,9 @@ export function listProducts(menuId: string, filters: ProductFilters, page: numb
     ...listParams(filters),
     { descending: 'enabled' },
     { addDescending: 'createdAt' },
+    // A tiebreak: an imported menu's dishes can share a `createdAt`, and without one they
+    // could repeat on one page and be missing from the next.
+    { addAscending: 'objectId' },
     { limit: PRODUCT_PAGE_SIZE },
     { skip: (page - 1) * PRODUCT_PAGE_SIZE },
   ]);

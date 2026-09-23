@@ -134,7 +134,6 @@ export function SupportScreen() {
 
   const rows = useMemo(() => listQuery.data?.results ?? [], [listQuery.data]);
   const total = listQuery.data?.count ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / SUPPORT_PAGE_SIZE));
   const selectedIndex = rows.findIndex((row) => row.objectId === selectedId);
   const newerHref = selectedIndex > 0 ? hrefFor(rows[selectedIndex - 1].objectId) : null;
   const olderHref =
@@ -294,7 +293,7 @@ export function SupportScreen() {
             error={listQuery.error}
             isPlaceholderData={listQuery.isPlaceholderData}
             isFetching={listQuery.isFetching}
-            page={Math.min(page, totalPages)}
+            page={page}
             pageSize={SUPPORT_PAGE_SIZE}
             total={total}
             rowCount={rows.length}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Alert, Button, Chip, Skeleton } from '@heroui/react';
@@ -11,6 +11,7 @@ import { useNow } from '@/hooks/use-now';
 import { useSession } from '@/hooks/use-session';
 import { pinnedRegionId } from '@/lib/auth/access';
 import { splitPhones } from '@/lib/format';
+import { usePageInRange } from '@/hooks/use-page-in-range';
 import { useI18n } from '@/lib/i18n/provider';
 import { customerStatusOf, isStaffTagged } from '@/lib/ops/customers';
 import { toLatLng } from '@/lib/ops/dispatch';
@@ -357,13 +358,15 @@ function OrderHistory({
   const [expanded, setExpanded] = useState<string | null>(null);
   const headingRef = useRef<HTMLDivElement>(null);
   const rows = orders.data?.results ?? [];
-  const lastPage = Math.max(1, Math.ceil((orders.data?.count ?? 0) / CUSTOMER_ORDERS_PAGE_SIZE));
-
   // A page past the end — a pasted link, or history that shrank since — would say "No orders
   // yet" over orders that exist. Go to the last real page instead.
-  useEffect(() => {
-    if (orders.data && !orders.isPlaceholderData && page > lastPage) onPageChange(lastPage);
-  }, [orders.data, orders.isPlaceholderData, page, lastPage, onPageChange]);
+  usePageInRange({
+    page,
+    total: orders.data?.count ?? 0,
+    pageSize: CUSTOMER_ORDERS_PAGE_SIZE,
+    isSettled: orders.status === 'success' && !orders.isPlaceholderData,
+    onPageChange,
+  });
 
   // The pager sits under the rows, so a new page would otherwise open at its bottom. An open
   // row belongs to the page it was on, as on the board.

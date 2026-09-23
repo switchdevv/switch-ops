@@ -281,6 +281,45 @@ export const en = {
     },
   },
 
+  appAccess: {
+    action: 'App access',
+    title: 'App access — {name}',
+    subtitle: 'Which Switch apps this account can sign in to.',
+    loading: 'Loading the account…',
+    loadFailed: "Couldn't open this account",
+    apps: {
+      driver: 'Driver app',
+      driverHint: 'Can sign in to the driver app and be assigned deliveries.',
+      manager: 'Restaurant manager app',
+      managerHint: 'Can sign in to the manager app once a restaurant is linked to them.',
+      managerLocked: 'Runs {restaurant}. Take them off the restaurant first to remove this.',
+      staff: 'Staff',
+      staffHint: 'Joins the Staff role — the staff consoles, once a console is granted.',
+    },
+    customerNote: "The customer app needs no access: it's added the first time they sign in to it.",
+    openManager: 'Open their manager page',
+    opsAccess: 'Also give Switch Ops access',
+    opsAccessHint: 'You can change it later on the Access page.',
+    grantManager: 'They still need a restaurant — link one from the Managers page before the manager app opens.',
+    revokeDriver:
+      "They lose the driver app the next time it starts. Orders lined up behind them go back to needing a driver.",
+    revokeStaff: 'Takes them off the team: out of the Staff role, console access removed, and signed out everywhere.',
+    phone: 'Phone',
+    phoneHint: 'This account has none, and it is required to save. 0550 12 34 56 or +213…',
+    region: 'Region',
+    chooseRegion: 'Choose a region',
+    errors: {
+      phone: 'Enter a valid phone number.',
+      region: 'Choose a region.',
+      profile: 'This account has no name or email. Complete its profile first.',
+    },
+    cancel: 'Cancel',
+    save: 'Save',
+    saving: 'Saving…',
+    saved: "{name}'s app access was updated.",
+    opsGrantFailed: "They're staff now, but Switch Ops access couldn't be given — grant it on the Access page.",
+  },
+
   errors: {
     network: "Can't reach the server. Check your connection and try again.",
     timeout: "The server didn't answer in time. It may still have gone through — check before trying again.",
@@ -337,6 +376,11 @@ export const en = {
       "That app isn't registered for notifications on their phone, so the reply couldn't be sent — call or email them instead.",
     accessUnavailable:
       "Access changes aren't enabled on the server yet — ask the platform team to deploy `setOpsAccess`.",
+    appAccessChanged: "This account's apps were changed from another screen in the meantime — open it again.",
+    appAccessNotFound: "This account doesn't exist, or isn't one you can change.",
+    appAccessSelf: "That's your own account — ask another admin to change its apps.",
+    removeStaffUnavailable:
+      "Taking someone off the staff isn't available on this server yet — it needs the new server (`removeStaff`).",
     accessForbidden: 'Only admins can change access.',
     callChanged: 'This call was marked from another screen in the meantime — check it again.',
     callsMissing:

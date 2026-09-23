@@ -36,6 +36,9 @@ export async function listMenus(restaurantId: string, filters: MenuFilters, page
   const result = await findWithCount<Menu>(LIST, [
     ...listParams(restaurantId, filters),
     { descending: 'updatedAt' },
+    // A tiebreak: switching a restaurant's menus on or off rewrites them all in one go, and
+    // rows with the same `updatedAt` could otherwise swap pages between reads.
+    { addAscending: 'objectId' },
     { limit: MENU_PAGE_SIZE },
     { skip: (page - 1) * MENU_PAGE_SIZE },
   ]);

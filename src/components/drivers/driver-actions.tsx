@@ -14,13 +14,14 @@ import { driverHref } from '@/lib/url/driver-filters';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Notice, type NoticeValue } from '@/components/ui/notice';
 import { RowMenu, type RowMenuItem } from '@/components/ui/row-menu';
-import { ArrowRightIcon, KeyIcon, PencilIcon, PowerIcon, SendIcon } from '@/components/icons';
+import { ArrowRightIcon, KeyIcon, PencilIcon, PowerIcon, SendIcon, ShieldIcon } from '@/components/icons';
+import { AppAccessDialog } from '@/components/accounts/app-access-dialog';
 import { DialogWarning } from './driver-bits';
 import { DriverFormDialog } from './driver-form-dialog';
 import { MessageDriverDialog } from './message-driver-dialog';
 import { ResetPasswordDialog } from './reset-password-dialog';
 
-type Dialog = 'edit' | 'password' | 'message' | 'activate' | 'deactivate' | null;
+type Dialog = 'edit' | 'password' | 'message' | 'activate' | 'deactivate' | 'apps' | null;
 
 /**
  * Everything ops can do to a driver, in two shapes: a row's (everything behind one ⋯) and
@@ -46,7 +47,7 @@ export function DriverActions({
 }) {
   const { t, tCount } = useI18n();
   const router = useRouter();
-  const { region } = useAccess();
+  const { region, role } = useAccess();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [localNotice, setLocalNotice] = useState<NoticeValue | null>(null);
   const setNotice = onNotice ?? setLocalNotice;
@@ -55,6 +56,11 @@ export function DriverActions({
   const name = driver.row.fullname ?? driver.row.username ?? t('common.none');
   const isEnabled = driver.row.enabled === true;
   const carrying = driver.orderIds[0];
+  // A staff account's apps are an admin's to change — the Staff box is theirs alone.
+  const canChangeApps = !driver.isProtected || role === 'admin';
+  const appsItem: RowMenuItem[] = canChangeApps
+    ? [{ key: 'apps', label: t('appAccess.action'), icon: <ShieldIcon className="size-4" />, onPress: () => open('apps') }]
+    : [];
 
   const open = (next: Dialog) => {
     setNotice(null);
@@ -95,13 +101,22 @@ export function DriverActions({
       onPress: () => router.push(driverHref(driver.id)),
     },
     ...writeItems,
+    ...appsItem,
   ];
 
   return (
     <div className="flex flex-col items-stretch gap-2">
       {variant === 'header' ? (
         driver.isProtected ? (
-          <DialogWarning>{t('drivers.actions.protected')}</DialogWarning>
+          <div className="flex flex-col items-start gap-2">
+            <DialogWarning>{t('drivers.actions.protected')}</DialogWarning>
+            {canChangeApps && (
+              <Button variant="secondary" size="sm" onPress={() => open('apps')}>
+                <ShieldIcon aria-hidden className="size-4" />
+                {t('appAccess.action')}
+              </Button>
+            )}
+          </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="primary" size="sm" onPress={() => open('edit')}>
@@ -124,6 +139,10 @@ export function DriverActions({
               <PowerIcon aria-hidden className="size-4" />
               {t(isEnabled ? 'drivers.actions.deactivate' : 'drivers.actions.activate')}
             </Button>
+            <Button variant="ghost" size="sm" onPress={() => open('apps')}>
+              <ShieldIcon aria-hidden className="size-4" />
+              {t('appAccess.action')}
+            </Button>
           </div>
         )
       ) : (
@@ -137,6 +156,17 @@ export function DriverActions({
       {dialog === 'edit' && <DriverFormDialog driverId={driver.id} onClose={() => setDialog(null)} onDone={finish} />}
       {dialog === 'password' && <ResetPasswordDialog driver={driver} onClose={() => setDialog(null)} onDone={finish} />}
       {dialog === 'message' && <MessageDriverDialog driver={driver} onClose={() => setDialog(null)} onDone={finish} />}
+      {dialog === 'apps' && (
+        <AppAccessDialog
+          userId={driver.id}
+          name={name}
+          onClose={() => setDialog(null)}
+          onDone={(notice) => {
+            setDialog(null);
+            setNotice(notice);
+          }}
+        />
+      )}
 
       {(dialog === 'activate' || dialog === 'deactivate') && (
         <ConfirmDialog

@@ -13,14 +13,15 @@ import { managerHref } from '@/lib/url/manager-filters';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Notice, type NoticeValue } from '@/components/ui/notice';
 import { RowMenu, type RowMenuItem } from '@/components/ui/row-menu';
-import { ArrowRightIcon, KeyIcon, PencilIcon, PowerIcon, SendIcon, StoreIcon } from '@/components/icons';
+import { ArrowRightIcon, KeyIcon, PencilIcon, PowerIcon, SendIcon, ShieldIcon, StoreIcon } from '@/components/icons';
+import { AppAccessDialog } from '@/components/accounts/app-access-dialog';
 import { DialogWarning } from '@/components/drivers/driver-bits';
 import { AssignRestaurantDialog } from './assign-restaurant-dialog';
 import { ManagerFormDialog } from './manager-form-dialog';
 import { ManagerMessageDialog } from './manager-message-dialog';
 import { ManagerPasswordDialog } from './manager-password-dialog';
 
-type Dialog = 'edit' | 'password' | 'message' | 'activate' | 'deactivate' | 'assign' | 'remove' | null;
+type Dialog = 'edit' | 'password' | 'message' | 'activate' | 'deactivate' | 'assign' | 'remove' | 'apps' | null;
 
 /**
  * Everything ops can do to a manager, as a row's ⋯ menu or the manager page's header — built
@@ -42,7 +43,7 @@ export function ManagerActions({
 }) {
   const { t } = useI18n();
   const router = useRouter();
-  const { region } = useAccess();
+  const { region, role } = useAccess();
   const pinnedRegion = pinnedRegionId(region);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [localNotice, setLocalNotice] = useState<NoticeValue | null>(null);
@@ -55,6 +56,11 @@ export function ManagerActions({
   const restaurantName = manager.restaurant?.name ?? '';
   const canAssign = manager.link === 'none';
   const canRemove = manager.link === 'ok';
+  // A staff account's apps are an admin's to change — the Staff box is theirs alone.
+  const canChangeApps = !manager.isProtected || role === 'admin';
+  const appsItem: RowMenuItem[] = canChangeApps
+    ? [{ key: 'apps', label: t('appAccess.action'), icon: <ShieldIcon className="size-4" />, onPress: () => open('apps') }]
+    : [];
 
   const open = (next: Dialog) => {
     setNotice(null);
@@ -111,13 +117,22 @@ export function ManagerActions({
       onPress: () => router.push(managerHref(manager.id)),
     },
     ...writeItems,
+    ...appsItem,
   ];
 
   return (
     <div className="flex flex-col items-stretch gap-2">
       {variant === 'header' ? (
         manager.isProtected ? (
-          <DialogWarning>{t('drivers.actions.protected')}</DialogWarning>
+          <div className="flex flex-col items-start gap-2">
+            <DialogWarning>{t('drivers.actions.protected')}</DialogWarning>
+            {canChangeApps && (
+              <Button variant="secondary" size="sm" onPress={() => open('apps')}>
+                <ShieldIcon aria-hidden className="size-4" />
+                {t('appAccess.action')}
+              </Button>
+            )}
+          </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="primary" size="sm" onPress={() => open('edit')}>
@@ -152,6 +167,10 @@ export function ManagerActions({
               <PowerIcon aria-hidden className="size-4" />
               {t(isEnabled ? 'drivers.actions.deactivate' : 'drivers.actions.activate')}
             </Button>
+            <Button variant="ghost" size="sm" onPress={() => open('apps')}>
+              <ShieldIcon aria-hidden className="size-4" />
+              {t('appAccess.action')}
+            </Button>
           </div>
         )
       ) : (
@@ -166,6 +185,17 @@ export function ManagerActions({
       {dialog === 'password' && <ManagerPasswordDialog manager={manager} onClose={() => setDialog(null)} onDone={finish} />}
       {dialog === 'message' && <ManagerMessageDialog manager={manager} onClose={() => setDialog(null)} onDone={finish} />}
       {dialog === 'assign' && <AssignRestaurantDialog manager={manager} onClose={() => setDialog(null)} onDone={finish} />}
+      {dialog === 'apps' && (
+        <AppAccessDialog
+          userId={manager.id}
+          name={name}
+          onClose={() => setDialog(null)}
+          onDone={(notice) => {
+            setDialog(null);
+            setNotice(notice);
+          }}
+        />
+      )}
 
       {dialog === 'remove' && (
         <ConfirmDialog

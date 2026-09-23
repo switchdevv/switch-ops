@@ -12,7 +12,8 @@ import type { CustomerRow } from '@/types/customer';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Notice, type NoticeValue } from '@/components/ui/notice';
 import { RowMenu, type RowMenuItem } from '@/components/ui/row-menu';
-import { KeyIcon, PencilIcon, PowerIcon, TrashIcon, UserIcon } from '@/components/icons';
+import { KeyIcon, PencilIcon, PowerIcon, ShieldIcon, TrashIcon, UserIcon } from '@/components/icons';
+import { AppAccessDialog } from '@/components/accounts/app-access-dialog';
 import { CustomerFormDialog } from './customer-form-dialog';
 import { ResetPasswordDialog } from './reset-password-dialog';
 
@@ -20,7 +21,7 @@ import { ResetPasswordDialog } from './reset-password-dialog';
  * detail page's account read once reshaped. */
 export type CustomerSubject = Pick<CustomerRow, 'objectId' | 'fullname' | 'username' | 'enabled' | 'staffType' | 'appType' | 'managerStore'>;
 
-type Dialog = 'edit' | 'password' | 'enable' | 'disable' | 'delete' | null;
+type Dialog = 'edit' | 'password' | 'enable' | 'disable' | 'delete' | 'apps' | null;
 
 /**
  * Everything ops can do to a customer account, as a row's ⋯ menu or the detail page's
@@ -76,6 +77,7 @@ export function CustomerActions({
     { key: 'view', label: t('customers.actions.view'), icon: <UserIcon className="size-4" />, onPress: () => router.push(customerHref(customer.objectId)) },
     { key: 'edit', label: t('customers.actions.edit'), icon: <PencilIcon className="size-4" />, onPress: () => open('edit') },
     { key: 'password', label: t('customers.actions.resetPassword'), icon: <KeyIcon className="size-4" />, onPress: () => open('password') },
+    { key: 'apps', label: t('appAccess.action'), icon: <ShieldIcon className="size-4" />, onPress: () => open('apps') },
     {
       key: 'enabled',
       label: t(isEnabled ? 'customers.actions.disable' : 'customers.actions.enable'),
@@ -99,6 +101,10 @@ export function CustomerActions({
           <Button variant="secondary" size="sm" onPress={() => open('password')}>
             <KeyIcon aria-hidden className="size-4" />
             {t('customers.actions.resetPassword')}
+          </Button>
+          <Button variant="secondary" size="sm" onPress={() => open('apps')}>
+            <ShieldIcon aria-hidden className="size-4" />
+            {t('appAccess.action')}
           </Button>
           <Button variant={isEnabled ? 'danger-soft' : 'secondary'} size="sm" onPress={() => open(isEnabled ? 'disable' : 'enable')}>
             <PowerIcon aria-hidden className="size-4" />
@@ -136,6 +142,18 @@ export function CustomerActions({
           name={name}
           onClose={() => setDialog(null)}
           onDone={() => done(t('customers.password.done', { customer: name }))}
+        />
+      )}
+
+      {dialog === 'apps' && (
+        <AppAccessDialog
+          userId={customer.objectId}
+          name={name}
+          onClose={() => setDialog(null)}
+          onDone={(notice) => {
+            setDialog(null);
+            setNotice(notice);
+          }}
         />
       )}
 

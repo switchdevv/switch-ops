@@ -170,6 +170,8 @@ export const queryKeys = {
     account: (id: string) => ['customers', 'account', id] as const,
     addresses: (id: string) => ['customers', 'addresses', id] as const,
   },
+  /** An account's apps, read through `getUsers` when the App access dialog opens. */
+  appAccess: (userId: string) => ['app-access', userId] as const,
   /** An account looked up by id before being made a restaurant's manager. */
   managerCandidate: (userId: string) => ['manager-candidate', userId] as const,
   /**

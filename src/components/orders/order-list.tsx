@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Alert, Button, Skeleton } from '@heroui/react';
+import { usePageInRange } from '@/hooks/use-page-in-range';
 import { useI18n } from '@/lib/i18n/provider';
 import type { QueueSlot } from '@/lib/ops/queue';
 import { parseErrorKey } from '@/lib/parse/errors';
@@ -67,7 +68,17 @@ export function OrderList({
       return next;
     });
 
-  if (status === 'pending') return <ListSkeleton />;
+  // A live board shrinks under its reader: orders leave a stage filter as they move on, and
+  // page 3 of "needs a driver" can be empty a minute later. Follow it back to the last page.
+  const isPastEnd = usePageInRange({
+    page,
+    total: data?.count ?? 0,
+    pageSize: ORDER_PAGE_SIZE,
+    isSettled: status === 'success' && !isPlaceholderData,
+    onPageChange,
+  });
+
+  if (status === 'pending' || isPastEnd) return <ListSkeleton />;
 
   if (status === 'error') {
     return (
